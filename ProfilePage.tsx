@@ -4,7 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import { colors, fonts as F, useTheme } from './tokens';
 
 const ASSETS = {
-  profilePic: 'https://www.figma.com/api/mcp/asset/89b10bc5-99a5-4de9-a23a-eb37f48617c1',
+  profilePic: require('./assets/profile-pic.png') as ReturnType<typeof require>,
 };
 
 function BackIcon() {
@@ -90,7 +90,7 @@ function makeStyles() {
       width: 56,
       height: 56,
       borderRadius: 28,
-      backgroundColor: colors.backgroundTertiary,
+      backgroundColor: colors.backgroundSecondary,
     },
     nameWrap: { flex: 1, gap: 2 },
     name: {
@@ -187,7 +187,7 @@ export default function ProfilePage({ onBack }: { onBack: () => void }) {
       </View>
 
       <View style={styles.profileCard}>
-        <Image source={{ uri: ASSETS.profilePic }} style={styles.avatar} />
+        <Image source={ASSETS.profilePic} style={styles.avatar} />
         <View style={styles.nameWrap}>
           <Text style={styles.name}>Sukanya</Text>
           <Text style={styles.email}>sukanyab@groww.in</Text>

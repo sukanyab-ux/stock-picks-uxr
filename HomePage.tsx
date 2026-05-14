@@ -32,7 +32,7 @@ const DSL = (ticker: string) =>
 // time, then bundled into assets/logos/ so they render offline of Groww's
 // network (e.g. Expo Go on a phone).
 const ASSETS = {
-  profilePic:  'https://www.figma.com/api/mcp/asset/89b10bc5-99a5-4de9-a23a-eb37f48617c1',
+  profilePic:  require('./assets/profile-pic.png') as ReturnType<typeof require>,
   motilalLogo: null as string | null,
   iciciLogo:   require('./assets/logos/ICICIBANK.png') as ReturnType<typeof require>,
   sbiLogo:     require('./assets/logos/SBIN.png')      as ReturnType<typeof require>,
@@ -1152,7 +1152,7 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
                 <GR1Icon size={24} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.profileBtn} activeOpacity={0.8} onPress={onNavigateToProfile}>
-                <Image source={{ uri: ASSETS.profilePic }} style={styles.profilePic} />
+                <Image source={ASSETS.profilePic} style={styles.profilePic} />
               </TouchableOpacity>
             </View>
           </View>
@@ -1331,6 +1331,7 @@ const makeStyles = () => StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+    backgroundColor: colors.backgroundSecondary,
   },
 
   // Index strip
