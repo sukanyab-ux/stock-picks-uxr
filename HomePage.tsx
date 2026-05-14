@@ -192,11 +192,11 @@ const NAV_SVG = {
 };
 
 const NAV_ITEMS = [
-  { label: 'Stocks',       svg: NAV_SVG.stocksDef, svgSel: NAV_SVG.stocksSel, active: true  },
-  { label: 'Mutual Funds', svg: NAV_SVG.mfDef,     svgSel: NAV_SVG.mfSel,    active: false },
-  { label: 'F&O',          svg: NAV_SVG.fnoDef,    svgSel: NAV_SVG.fnoSel,   active: false },
-  { label: 'Pay',          svg: NAV_SVG.payDef,    svgSel: NAV_SVG.paySel,   active: false },
-  { label: 'Loans',        svg: NAV_SVG.loansDef,  svgSel: NAV_SVG.loansSel, active: false },
+  { label: 'Stocks',       svg: NAV_SVG.stocksDef, svgSel: NAV_SVG.stocksSel },
+  { label: 'Mutual Funds', svg: NAV_SVG.mfDef,     svgSel: NAV_SVG.mfSel    },
+  { label: 'F&O',          svg: NAV_SVG.fnoDef,    svgSel: NAV_SVG.fnoSel   },
+  { label: 'Pay',          svg: NAV_SVG.payDef,    svgSel: NAV_SVG.paySel   },
+  { label: 'Loans',        svg: NAV_SVG.loansDef,  svgSel: NAV_SVG.loansSel },
 ];
 
 // ─── Sparkle / AI icon ────────────────────────────────────────────────────────
@@ -1027,20 +1027,20 @@ function ProductsAndToolsSection() {
   );
 }
 
-function BottomNav() {
+function BottomNav({ activeNav, onNavPress }: { activeNav: number; onNavPress: (i: number) => void }) {
   return (
     <View style={styles.bottomNav}>
       <View style={styles.bottomNavBar}>
-        {NAV_ITEMS.map((item) => (
-          <View key={item.label} style={styles.navTab}>
+        {NAV_ITEMS.map((item, i) => (
+          <TouchableOpacity key={item.label} style={styles.navTab} onPress={() => onNavPress(i)} activeOpacity={0.7}>
             <View style={styles.navIconWrap}>
-              {item.active && <View style={styles.navActiveIndicator} />}
-              <SvgXml xml={item.active ? item.svgSel : item.svg} width={24} height={24} />
+              {i === activeNav && <View style={styles.navActiveIndicator} />}
+              <SvgXml xml={i === activeNav ? item.svgSel : item.svg} width={24} height={24} />
             </View>
-            <Text style={[styles.navLabel, item.active && styles.navLabelActive]}>
+            <Text style={[styles.navLabel, i === activeNav && styles.navLabelActive]}>
               {item.label}
             </Text>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
       <View style={styles.homeIndicator} />
@@ -1053,6 +1053,7 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
   const { mode } = useTheme();
   styles = makeStyles();
   const [activeTab, setActiveTab] = useState(0);
+  const [activeNav, setActiveNav] = useState(0);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const baseRef = useRef<Record<string, Quote>>({});
   const gr1 = useGR1Sheet();
@@ -1140,7 +1141,7 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
             </View>
             {/* Title */}
             <View style={styles.searchTitleWrap}>
-              <Text style={styles.searchTitle}>Stocks</Text>
+              <Text style={styles.searchTitle}>{activeNav === 2 ? 'F&O' : 'Stocks'}</Text>
             </View>
             {/* Actions */}
             <View style={styles.headerActions}>
@@ -1214,14 +1215,18 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
           }
         }}
       >
-        {/* Recently viewed */}
-        <RecentlyViewedSection onStockPress={onNavigateToStocks} quotes={quotes} />
+        {activeNav === 2 ? (
+          <View style={{ height: 16 }} />
+        ) : (
+          <>
+            {/* Recently viewed */}
+            <RecentlyViewedSection onStockPress={onNavigateToStocks} quotes={quotes} />
 
-        {/* Most traded */}
-        <MostTradedSection onStockPress={onNavigateToStocks} quotes={quotes} />
+            {/* Most traded */}
+            <MostTradedSection onStockPress={onNavigateToStocks} quotes={quotes} />
 
-        {/* Products and tools */}
-        <ProductsAndToolsSection />
+            {/* Products and tools */}
+            <ProductsAndToolsSection />
 
         {/* Top movers */}
         <TopMoversSection onStockPress={onNavigateToStocks} quotes={quotes} />
@@ -1251,9 +1256,11 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
         <StocksInNewsSection onStockPress={onNavigateToStocks} quotes={quotes} />
 
         <View style={{ height: 16 }} />
+          </>
+        )}
       </ScrollView>
 
-      <BottomNav />
+      <BottomNav activeNav={activeNav} onNavPress={setActiveNav} />
 
       <GR1Layer state={gr1} />
     </SafeAreaView>
