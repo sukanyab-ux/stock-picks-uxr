@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "stocks-product-page",
-    "slug": "stocks-product-page",
+    "name": "stocks-prime",
+    "slug": "stocks-prime",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.stocks-product-page"
+      "bundleIdentifier": "com.anonymous.stocks-prime"
     },
     "android": {
       "adaptiveIcon": {
@@ -28,17 +28,19 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      "expo-splash-screen",
+      "expo-status-bar"
     ],
+    "owner": "growwdesign",
+    "runtimeVersion": "exposdk:57.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/e0302ebf-5141-4988-bef4-7d7a62241cd8"
+    },
     "extra": {
       "eas": {
-        "projectId": "a1e35fef-4542-4799-970e-aea2219969b4"
+        "projectId": "e0302ebf-5141-4988-bef4-7d7a62241cd8"
       }
-    },
-    "owner": "sukanyab",
-    "runtimeVersion": "exposdk:54.0.0",
-    "updates": {
-      "url": "https://u.expo.dev/a1e35fef-4542-4799-970e-aea2219969b4"
     }
   }
 }

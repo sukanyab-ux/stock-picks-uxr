@@ -17,6 +17,22 @@ function setCors(res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 }
 
+// Safely emit an error response. If the response has already started (headers
+// sent / piping underway) we can't write a new status — just end it. This keeps
+// a mid-stream upstream socket error from throwing ERR_HTTP_HEADERS_SENT and
+// crashing the proxy (which would take down the whole `npm run web`).
+function safeError(res, code, message) {
+  try {
+    if (res.writableEnded) return;
+    if (!res.headersSent) {
+      res.writeHead(code, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: message }));
+    } else {
+      res.end();
+    }
+  } catch { /* response already torn down */ }
+}
+
 http.createServer(async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
@@ -36,11 +52,9 @@ http.createServer(async (req, res) => {
     const target = `https://query1.finance.yahoo.com${path}`;
     https.get(target, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (r) => {
       res.writeHead(r.statusCode || 502, { 'Content-Type': 'application/json' });
+      r.on('error', () => safeError(res, 502, 'upstream stream error'));
       r.pipe(res);
-    }).on('error', (e) => {
-      res.writeHead(502, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
-    });
+    }).on('error', (e) => safeError(res, 502, e.message));
     return;
   }
 
@@ -75,14 +89,13 @@ http.createServer(async (req, res) => {
           let payload = raw;
           const m = raw.match(/^data: (.+)$/m);
           if (m) payload = m[1];
+          if (res.writableEnded) return;
           res.writeHead(r.statusCode || 502, { 'Content-Type': 'application/json' });
           res.end(payload);
         });
+        r.on('error', () => safeError(res, 502, 'upstream stream error'));
       });
-      upstream.on('error', (e) => {
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: e.message }));
-      });
+      upstream.on('error', (e) => safeError(res, 502, e.message));
       upstream.write(body);
       upstream.end();
     });

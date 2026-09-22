@@ -6,20 +6,30 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
   Image,
   Platform,
   Animated,
+  Easing,
+  Dimensions,
+  LayoutChangeEvent,
 } from 'react-native';
-import Svg, { Path, Circle, Rect, G, Defs, LinearGradient, Stop } from 'react-native-svg';
+const SW = Dimensions.get('window').width;
+import * as Haptics from 'expo-haptics';
+import Svg, { Path, Circle, Rect, G, Defs, LinearGradient, Stop, Line as SvgLine } from 'react-native-svg';
 import { SvgXml } from 'react-native-svg';
 import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Search01Icon } from '@hugeicons/core-free-icons';
+import { Search01Icon, ArrowDataTransferHorizontalIcon, Cancel01Icon, Tick02Icon, FlashIcon } from '@hugeicons/core-free-icons';
 import { StockConfig, STOCK_CONFIGS } from './stocks';
+import { Position, positionReturns } from './positions';
 import { GR1Icon, useGR1Sheet, GR1Layer } from './GR1Sheet';
 
 // ─── Design tokens ───────────────────────────────────────────────────────────
 import { colors, fonts as F, useTheme } from './tokens';
+import SafeArea from './SafeArea';
+
+// ─── Live price jitter ───────────────────────────────────────────────────────
+import { useLiveTick, getLiveTick, live, priceNum, pctNum, inr } from './live';
+import { CALLS } from './PrimeListingPageV2';
 
 // ─── Mint DS stock logo CDN ───────────────────────────────────────────────────
 // Public Groww asset CDN — used as a fallback for tickers we haven't yet
@@ -136,6 +146,56 @@ const TOP_MOVERS_MORE_LOGOS: Array<string | null> = [
   DSL('INFOBEAN'), DSL('SWIGGY'), DSL('GROWW'),
 ];
 
+// ─── Prime MTF picks ──────────────────────────────────────────────────────────
+// Figma 410:103850 — brand eyebrow + "MTF picks" title, horizontal "Recent prime
+// wins" strip. Each pick shows a logo + an accent return chip and a duration label.
+const PRIME_WRAP_H = 148;    // carousel viewport height (headroom for scaled-up cards + "Profit" label)
+const PRIME_PICK_GAP = 12;   // constant visual gap between picks (and row's left inset)
+const PRIME_PICK_AMP = 0.1;  // center-focus amplitude (Medium): centre 1.1×, edges 0.9×
+const PRIME_FOCUS_SAMPLES = 24; // interpolation samples across one loop period
+const PRIME_MTF_PICKS = [
+  { ticker: 'OLAELEC',    name: 'Ola Electric',   gain: '+4.3%', days: 'in 1D', logo: DSL('OLAELEC')    },
+  { ticker: 'AMBUJACEM',  name: 'Ambuja Cements', gain: '+5.6%', days: 'in 3D', logo: DSL('AMBUJACEM')  },
+  { ticker: 'BANKBARODA', name: 'Bank of Baroda', gain: '+6.2%', days: 'in 2D', logo: DSL('BANKBARODA') },
+  { ticker: 'DABUR',      name: 'Dabur',          gain: '+4.2%', days: 'in 4D', logo: DSL('DABUR')      },
+];
+
+// Prime brand gem (Figma 205:80887) — rendered via SvgXml so the faceted
+// mask/opacity layers come through verbatim.
+const PRIME_GEM_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<mask id="mask0_205_80887" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="2" y="2" width="12" height="12">
+<rect x="8" y="2" width="8.48528" height="8.48528" rx="0.75" transform="rotate(45 8 2)" fill="#D9D9D9"/>
+</mask>
+<g mask="url(#mask0_205_80887)">
+<path opacity="0.5" d="M8 8.00064V1.99023L14.0099 8.00064H8Z" fill="#223CD3"/>
+<path opacity="0.5" d="M7.99805 7.99936V14.0098L2.00018 7.99936H7.99805Z" fill="#3C2F2F"/>
+<path opacity="0.5" d="M8 7.99936V14.0098L13.9979 7.99936H8Z" fill="#3C2F2F"/>
+<path opacity="0.5" d="M8 8.00064V1.99023L13.9979 8.00064H8Z" fill="#3C2F2F"/>
+<path opacity="0.5" d="M7.99805 8.00064V1.99023L2.00018 8.00064H7.99805Z" fill="#3C2F2F"/>
+<rect x="8" y="2" width="8.48528" height="8.48528" transform="rotate(45 8 2)" fill="#223CD3"/>
+<path d="M8 8.00064V1.99023L10.8151 8.00064H8Z" fill="#3D52D2"/>
+<path d="M8.00781 8.00064V1.99023L1.99793 8.00064H8.00781Z" fill="#B8C0E8"/>
+<path d="M8 7.99125V14.0137L14.0099 7.99125H8Z" fill="#1828BF"/>
+<path d="M8.00781 7.99125V14.0137L1.99793 7.99125H8.00781Z" fill="#597AD8"/>
+<path d="M8.00391 8.00064V1.99023L5.17678 8.00064H8.00391Z" fill="#7D8DE4"/>
+<path d="M7.99219 7.99545V14.0059L5.17707 7.99545H7.99219Z" fill="#4462CC"/>
+<path d="M8 7.99545V14.0059L10.8151 7.99545H8Z" fill="#2741C4"/>
+</g>
+</svg>`;
+
+// Circle with double-up chevrons — replaces blue gem on prime position rows.
+const PRIME_CIRCLE_UP_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="mask0_2747_244701" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="17" height="16"><path d="M0.000488281 -6.10352e-05H16.0005V15.9999H0.000488281V-6.10352e-05Z" fill="url(#paint0_radial_2747_244701)"/></mask><g mask="url(#mask0_2747_244701)"><path d="M10.4508 7.10576C10.4508 6.39035 10.3101 5.68196 10.0363 5.02099C9.7625 4.35989 9.3608 3.75898 8.85481 3.25301C8.34889 2.74708 7.74847 2.34535 7.08747 2.07153C6.42636 1.7977 5.71765 1.65699 5.00208 1.65699C4.70348 1.65699 4.46143 1.41493 4.46143 1.11634C4.46143 0.817742 4.70348 0.575684 5.00208 0.575684C5.85965 0.575684 6.70907 0.744715 7.50136 1.07289C8.29359 1.40107 9.01365 1.88217 9.61996 2.48849C10.2263 3.09484 10.7074 3.81485 11.0356 4.60705C11.3637 5.39922 11.5322 6.24834 11.5322 7.10576C11.5322 7.40436 11.2901 7.64641 10.9915 7.64641C10.693 7.64634 10.4508 7.4043 10.4508 7.10576Z" fill="#353839"/><path d="M5.54273 8.8976C5.54276 9.613 5.68353 10.3214 5.95727 10.9823C6.23111 11.6434 6.63276 12.2443 7.13872 12.7503C7.64471 13.2562 8.24506 13.658 8.90613 13.9318C9.56719 14.2056 10.276 14.3463 10.9915 14.3463C11.2901 14.3463 11.5322 14.5884 11.5322 14.887C11.5322 15.1856 11.2901 15.4277 10.9915 15.4277C10.134 15.4277 9.28446 15.2586 8.49217 14.9304C7.70001 14.6023 6.97995 14.1212 6.37362 13.5148C5.76733 12.9085 5.28617 12.1885 4.95803 11.3963C4.62994 10.6041 4.46145 9.75499 4.46143 8.8976C4.46143 8.59897 4.70348 8.35693 5.00208 8.35693C5.30059 8.357 5.54273 8.59903 5.54273 8.8976Z" fill="#353839"/><path d="M7.54883 10.5695C8.16843 10.9273 8.85232 11.1596 9.56162 11.253C10.2711 11.3464 10.9922 11.2989 11.6834 11.1138C12.3746 10.9286 13.0226 10.6095 13.5903 10.1739C14.158 9.73827 14.6342 9.19486 14.992 8.57519C15.1413 8.31657 15.4719 8.22797 15.7306 8.37728C15.9892 8.5266 16.0778 8.85724 15.9285 9.11585C15.4997 9.85853 14.9285 10.5097 14.2482 11.0317C13.5679 11.5536 12.7912 11.9367 11.963 12.1587C11.1347 12.3805 10.2706 12.4372 9.42046 12.3253C8.57034 12.2133 7.75077 11.9347 7.00823 11.506C6.74962 11.3567 6.66101 11.0261 6.81033 10.7675C6.95965 10.509 7.29035 10.4203 7.54883 10.5695Z" fill="#353839"/><path d="M8.45258 5.42625C7.83304 5.06856 7.14916 4.83628 6.43987 4.74287C5.73043 4.64947 5.0092 4.69686 4.31802 4.88206C3.6269 5.06727 2.9788 5.38636 2.41114 5.82192C1.84345 6.25753 1.36724 6.80094 1.00945 7.42064C0.860156 7.67921 0.529494 7.76781 0.270905 7.61856C0.0123145 7.46925 -0.0762847 7.13858 0.0730123 6.87999C0.501796 6.13731 1.07291 5.48618 1.75326 4.96412C2.43355 4.44216 3.21024 4.05911 4.03849 3.83719C4.86674 3.61529 5.73088 3.55861 6.58101 3.67053C7.43107 3.78248 8.2507 4.06112 8.99325 4.48981C9.25186 4.63911 9.34046 4.96977 9.19115 5.22836C9.04183 5.48683 8.71113 5.57552 8.45258 5.42625Z" fill="#353839"/><path d="M5.99908 6.31896C5.37953 6.67669 4.83643 7.15279 4.40089 7.72032C3.96528 8.28805 3.64571 8.93637 3.46051 9.62752C3.27534 10.3187 3.22762 11.0395 3.32101 11.7489C3.41441 12.4583 3.64691 13.1424 4.00469 13.7621C4.15399 14.0207 4.06539 14.3514 3.8068 14.5006C3.54821 14.65 3.21756 14.5614 3.06826 14.3028C2.63947 13.5601 2.36112 12.7399 2.24919 11.8897C2.13731 11.0396 2.19392 10.1754 2.41585 9.34718C2.63782 8.51892 3.02079 7.74225 3.54278 7.06195C4.06478 6.38173 4.71589 5.81126 5.45843 5.38252C5.71702 5.23323 6.04768 5.32182 6.19698 5.58042C6.34615 5.83898 6.25762 6.16969 5.99908 6.31896Z" fill="#353839"/><path d="M10.0003 9.67888C10.6198 9.3211 11.163 8.84499 11.5985 8.27746C12.0341 7.70973 12.3537 7.06147 12.5389 6.37028C12.7241 5.67916 12.7718 4.95834 12.6784 4.24895C12.585 3.5395 12.3525 2.85539 11.9947 2.23569C11.8454 1.9771 11.934 1.64644 12.1926 1.49715C12.4512 1.34785 12.7818 1.43645 12.9311 1.69504C13.3599 2.43771 13.6383 3.25788 13.7502 4.10811C13.8621 4.95824 13.8055 5.8224 13.5836 6.65064C13.3616 7.47887 12.9786 8.2556 12.4566 8.93585C11.9346 9.61611 11.2835 10.1866 10.541 10.6153C10.2824 10.7646 9.95173 10.676 9.80241 10.4174C9.6533 10.1588 9.74176 9.82812 10.0003 9.67888Z" fill="#353839"/></g><defs><radialGradient id="paint0_radial_2747_244701" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(8.00049 7.99994) rotate(90) scale(8.3834)"><stop stop-color="white"/><stop offset="0.55" stop-color="white"/><stop offset="1" stop-color="white" stop-opacity="0"/></radialGradient></defs></svg>`;
+
+// Flat blue gem shown before the "Update" label in the SL-update toast.
+const PRIME_GEM_FLAT_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M6.98993 1.95982C7.57638 1.48136 8.42287 1.48162 9.00946 1.95982L9.13153 2.0692L13.9304 6.869C14.5552 7.49384 14.5552 8.50686 13.9304 9.1317L9.13153 13.9305C8.50665 14.5549 7.49353 14.5552 6.86884 13.9305L2.06903 9.1317C1.44461 8.50707 1.44492 7.49383 2.06903 6.869L6.86884 2.0692L6.98993 1.95982ZM6.58563 8.49791L7.89423 13.2948C7.91816 13.3798 8.027 13.3909 8.07196 13.327L8.08661 13.2948L9.39423 8.49791H6.58563ZM10.4313 8.49791L9.41083 12.2362L13.1501 8.49791H10.4313ZM2.8493 8.49791L6.56122 12.2088L5.54852 8.49791H2.8493ZM2.85419 7.49791H5.5495L6.56122 3.7899L2.85419 7.49791ZM8.08661 2.70592C8.05968 2.60801 7.92121 2.60805 7.89423 2.70592L6.58661 7.49791H9.39325L8.08661 2.70592ZM10.4304 7.49791H13.1452L9.41083 3.76256L10.4304 7.49791Z" fill="#5669FF"/>
+</svg>`;
+
+// Concentric-circle target glyph for the "Add Stoploss / Target" action.
+const TARGET_SVG = `<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M9.16667 18.2917V17.4584C7.43056 17.2639 5.94097 16.5452 4.69792 15.3021C3.45486 14.0591 2.73611 12.5695 2.54167 10.8334H1.70833C1.47222 10.8334 1.27431 10.7535 1.11458 10.5938C0.954861 10.4341 0.875 10.2361 0.875 10C0.875 9.76392 0.954861 9.566 1.11458 9.40628C1.27431 9.24656 1.47222 9.1667 1.70833 9.1667H2.54167C2.73611 7.43059 3.45486 5.941 4.69792 4.69795C5.94097 3.45489 7.43056 2.73614 9.16667 2.5417V1.70836C9.16667 1.47225 9.24653 1.27434 9.40625 1.11461C9.56597 0.954892 9.76389 0.875031 10 0.875031C10.2361 0.875031 10.434 0.954892 10.5938 1.11461C10.7535 1.27434 10.8333 1.47225 10.8333 1.70836V2.5417C12.5694 2.73614 14.059 3.45489 15.3021 4.69795C16.5451 5.941 17.2639 7.43059 17.4583 9.1667H18.2917C18.5278 9.1667 18.7257 9.24656 18.8854 9.40628C19.0451 9.566 19.125 9.76392 19.125 10C19.125 10.2361 19.0451 10.4341 18.8854 10.5938C18.7257 10.7535 18.5278 10.8334 18.2917 10.8334H17.4583C17.2639 12.5695 16.5451 14.0591 15.3021 15.3021C14.059 16.5452 12.5694 17.2639 10.8333 17.4584V18.2917C10.8333 18.5278 10.7535 18.7257 10.5938 18.8854C10.434 19.0452 10.2361 19.125 10 19.125C9.76389 19.125 9.56597 19.0452 9.40625 18.8854C9.24653 18.7257 9.16667 18.5278 9.16667 18.2917ZM10 15.8334C11.6111 15.8334 12.9861 15.2639 14.125 14.125C15.2639 12.9861 15.8333 11.6111 15.8333 10C15.8333 8.38892 15.2639 7.01392 14.125 5.87503C12.9861 4.73614 11.6111 4.1667 10 4.1667C8.38889 4.1667 7.01389 4.73614 5.875 5.87503C4.73611 7.01392 4.16667 8.38892 4.16667 10C4.16667 11.6111 4.73611 12.9861 5.875 14.125C7.01389 15.2639 8.38889 15.8334 10 15.8334ZM10 13.3334C9.08333 13.3334 8.29861 13.007 7.64583 12.3542C6.99306 11.7014 6.66667 10.9167 6.66667 10C6.66667 9.08336 6.99306 8.29864 7.64583 7.64586C8.29861 6.99309 9.08333 6.6667 10 6.6667C10.9167 6.6667 11.7014 6.99309 12.3542 7.64586C13.0069 8.29864 13.3333 9.08336 13.3333 10C13.3333 10.9167 13.0069 11.7014 12.3542 12.3542C11.7014 13.007 10.9167 13.3334 10 13.3334ZM10 11.6667C10.4583 11.6667 10.8507 11.5035 11.1771 11.1771C11.5035 10.8507 11.6667 10.4584 11.6667 10C11.6667 9.5417 11.5035 9.14934 11.1771 8.82295C10.8507 8.49656 10.4583 8.33336 10 8.33336C9.54167 8.33336 9.14931 8.49656 8.82292 8.82295C8.49653 9.14934 8.33333 9.5417 8.33333 10C8.33333 10.4584 8.49653 10.8507 8.82292 11.1771C9.14931 11.5035 9.54167 11.6667 10 11.6667Z" fill="#7F8283"/>
+</svg>`;
+
 // ─── Most traded in MTF (Margin Trading Facility) ─────────────────────────────
 const MTF_STOCKS = [
   { name: 'Zomato',        ticker: 'ETERNAL', price: '₹294.13',   change: '-₹13.64 (0.56%)', positive: false, logo: ASSETS.zomatoLogo, config: STOCK_CONFIGS.ZOMATO   },
@@ -213,13 +273,13 @@ function SparkleIcon({ size = 24 }: { size?: number }) {
 
 
 // ─── StockLogo: DS CDN image with text-avatar fallback ───────────────────────
-function StockLogo({ logo, ticker, size = 32 }: {
+function StockLogo({ logo, ticker, size = 32, radius = 8 }: {
   logo: string | null | ReturnType<typeof require>;
   ticker: string;
   size?: number;
+  radius?: number;
 }) {
   const [failed, setFailed] = useState(false);
-  const radius = 8;
   const initials = ticker.slice(0, 2).toUpperCase();
 
   if (logo && !failed) {
@@ -286,8 +346,10 @@ function RecentlyViewedSection({ onStockPress, quotes }: { onStockPress: (cfg: S
       <View style={styles.watchlistRow}>
         {WATCHLIST_STOCKS.map((s) => {
           const q = quotes[s.config.symbol];
-          const pct = q ? `${q.changePct >= 0 ? '+' : ''}${q.changePct.toFixed(2)}%` : s.change;
-          const pos = q ? q.changePct >= 0 : s.positive;
+          const basePct = q ? q.changePct : (s.positive ? 1 : -1) * pctNum(s.change);
+          const L = live(100, basePct, s.ticker, getLiveTick());
+          const pct = `${L.pct >= 0 ? '+' : ''}${L.pct.toFixed(2)}%`;
+          const pos = L.pos;
           return (
             <TouchableOpacity key={s.ticker} style={styles.watchlistItem} onPress={() => onStockPress(configForCard(s))} activeOpacity={0.7}>
               <View style={styles.companyAvatar}>
@@ -328,13 +390,12 @@ function StockCard({ item, quote, onPress }: {
   quote?: Quote;
   onPress: (cfg: StockConfig) => void;
 }) {
-  const price  = quote
-    ? `₹${quote.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : item.price;
-  const pos    = quote ? quote.change >= 0 : item.positive;
-  const change = quote
-    ? `${quote.change >= 0 ? '+' : ''}₹${Math.abs(quote.change).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${Math.abs(quote.changePct).toFixed(2)}%)`
-    : item.change;
+  const basePrice = quote ? quote.price : priceNum(item.price);
+  const basePct   = quote ? quote.changePct : (item.positive ? 1 : -1) * pctNum(item.change);
+  const L = live(basePrice, basePct, item.ticker, getLiveTick());
+  const price  = `₹${inr(L.price)}`;
+  const pos    = L.pos;
+  const change = `${L.changeAbs >= 0 ? '+' : '-'}₹${inr(Math.abs(L.changeAbs))} (${Math.abs(L.pct).toFixed(2)}%)`;
 
   return (
     <TouchableOpacity style={styles.stockCard} onPress={() => onPress(configForCard(item))} activeOpacity={0.85}>
@@ -435,11 +496,12 @@ function TopMoversSection({ onStockPress, quotes }: { onStockPress: (cfg: StockC
       <View style={[styles.stockGrid, { marginTop: 16 }]}>
         {TOP_MOVERS_STOCKS.map((item) => {
           const q = quotes[item.config.symbol];
-          const price  = q ? `₹${q.price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : item.price;
-          const pos    = q ? q.change >= 0 : item.positive;
-          const change = q
-            ? `${q.change >= 0 ? '+' : ''}₹${Math.abs(q.change).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${Math.abs(q.changePct).toFixed(2)}%)`
-            : item.change;
+          const basePrice = q ? q.price : priceNum(item.price);
+          const basePct   = q ? q.changePct : (item.positive ? 1 : -1) * pctNum(item.change);
+          const L = live(basePrice, basePct, item.ticker, getLiveTick());
+          const price  = `₹${inr(L.price)}`;
+          const pos    = L.pos;
+          const change = `${L.changeAbs >= 0 ? '+' : '-'}₹${inr(Math.abs(L.changeAbs))} (${Math.abs(L.pct).toFixed(2)}%)`;
           return (
             <TouchableOpacity key={item.name} style={styles.stockCard} onPress={() => onStockPress(configForCard(item))} activeOpacity={0.85}>
               <View style={styles.stockCardTop}>
@@ -473,6 +535,770 @@ function TopMoversSection({ onStockPress, quotes }: { onStockPress: (cfg: StockC
           </TouchableOpacity>
         </View>
       </View>
+    </View>
+  );
+}
+
+// ─── Prime brand diamond (faceted blue gem) ──────────────────────────────────
+function PrimeDiamondIcon({ size = 20 }: { size?: number }) {
+  return <SvgXml xml={PRIME_GEM_SVG} width={size} height={size} />;
+}
+
+// Flat blue gem used as the leading icon of the SL-update toast.
+function PrimeGemFlatIcon({ size = 16 }: { size?: number }) {
+  return <SvgXml xml={PRIME_GEM_FLAT_SVG} width={size} height={size} />;
+}
+
+// Target / bullseye glyph for the "Add Stoploss / Target" action.
+function TargetIcon({ size = 20 }: { size?: number }) {
+  return <SvgXml xml={TARGET_SVG} width={size} height={size} />;
+}
+
+// Small "verified" tick badge (Figma mds_ic_verified) — disabled-grey, sits
+// next to the "by SEBI-verified analysts" caption.
+function VerifiedIcon({ size = 10 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Circle cx={8} cy={8} r={8} fill={colors.contentDisabled} />
+      <Path d="M4.6 8.2 L7 10.5 L11.4 5.6" stroke="#FFFFFF" strokeWidth={1.5}
+        strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  );
+}
+
+// Filled accent circle with a white tick — confirmation glyph for the "Done"
+// toast shown after the Prime SL update.
+function CircleCheckIcon({ size = 16, color = colors.contentAccent }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <Circle cx={8} cy={8} r={8} fill={color} />
+      <Path d="M4.6 8.2 L7 10.5 L11.4 5.6" stroke="#FFFFFF" strokeWidth={1.5}
+        strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </Svg>
+  );
+}
+
+// Horizontal scroll fade so edge picks dissolve into the card background.
+function PrimeFadeEdge({ side }: { side: 'left' | 'right' }) {
+  const c = colors.backgroundSurface;
+  const id = `primeFade-${side}`;
+  return (
+    <Svg width={28} height={PRIME_WRAP_H} pointerEvents="none"
+      style={[styles.primeFadeEdge, side === 'left' ? { left: 0 } : { right: 0 }]}>
+      <Defs>
+        <LinearGradient id={id} x1="0" y1="0" x2="1" y2="0">
+          <Stop offset="0" stopColor={c} stopOpacity={side === 'left' ? 1 : 0} />
+          <Stop offset="1" stopColor={c} stopOpacity={side === 'left' ? 0 : 1} />
+        </LinearGradient>
+      </Defs>
+      <Rect x={0} y={0} width={28} height={PRIME_WRAP_H} fill={`url(#${id})`} />
+    </Svg>
+  );
+}
+
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+function PrimePickCard({ pick, scale, margin, onLayout, onPress }: {
+  pick: typeof PRIME_MTF_PICKS[number];
+  scale: Animated.AnimatedInterpolation<number> | number;
+  margin: Animated.AnimatedInterpolation<number> | number;
+  onLayout?: (e: LayoutChangeEvent) => void;
+  onPress?: () => void;
+}) {
+  return (
+    <AnimatedTouchable
+      style={[styles.primePickCard, { marginHorizontal: margin, transform: [{ scale }] }]}
+      onLayout={onLayout}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
+      <View style={styles.primePickLogoWrap}>
+        <StockLogo logo={pick.logo} ticker={pick.ticker} size={32} />
+      </View>
+      <View style={styles.primePickTagCol}>
+        <View style={styles.primePickTag}>
+          <Text style={styles.primePickTagText}>{pick.gain}</Text>
+        </View>
+        <Text style={styles.primePickProfit}>{pick.days}</Text>
+      </View>
+    </AnimatedTouchable>
+  );
+}
+
+function PrimeMtfPicksSection({ onExplore }: { onExplore?: () => void }) {
+  // Slow, seamless right-to-left marquee. Two back-to-back sets translate by
+  // exactly one set's width and loop, so the seam is invisible. Cards hug their
+  // (identical) content, so we measure one card + the viewport once and derive
+  // the loop distance and a center-focus scale from that.
+  const tx = useRef(new Animated.Value(0)).current;
+  const [wc, setWc] = useState(0); // measured pick-card width
+  const [vw, setVw] = useState(0); // measured viewport (scroll wrap) width
+
+  const setW = wc ? PRIME_MTF_PICKS.length * (wc + PRIME_PICK_GAP) : 0;
+
+  useEffect(() => {
+    if (!setW) return;
+    tx.setValue(0);
+    const anim = Animated.loop(
+      Animated.timing(tx, {
+        toValue: -setW,
+        duration: 60000,    // very slow, subtle drift
+        easing: Easing.linear,
+        useNativeDriver: false, // animating layout (margin) → JS driver
+      }),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [tx, setW]);
+
+  // Center-focus "lens": a card's scale follows a cosine of its on-screen
+  // distance from the viewport center (peak = biggest at center). The matching
+  // marginHorizontal = wc*(scale-1)/2 reserves the scaled width in layout, so
+  // the visual gap between cards stays a constant 12px. With one cosine period
+  // spanning exactly one set (4 cards), the per-set sum of margins is identically
+  // zero, so the row's width is constant and the marquee loop stays seamless.
+  const focusFor = (i: number): {
+    scale: Animated.AnimatedInterpolation<number> | number;
+    margin: Animated.AnimatedInterpolation<number> | number;
+  } => {
+    if (!wc || !vw) return { scale: 1, margin: 0 };
+    const center = PRIME_PICK_GAP + i * (wc + PRIME_PICK_GAP) + wc / 2;
+    const input: number[] = [];
+    const scaleOut: number[] = [];
+    const marginOut: number[] = [];
+    for (let n = 0; n <= PRIME_FOCUS_SAMPLES; n++) {
+      const t = -setW + (setW * n) / PRIME_FOCUS_SAMPLES; // ascending: -setW → 0
+      const cos = Math.cos((2 * Math.PI / setW) * (center + t - vw / 2));
+      input.push(t);
+      scaleOut.push(1 + PRIME_PICK_AMP * cos);
+      marginOut.push((wc * PRIME_PICK_AMP / 2) * cos);
+    }
+    return {
+      scale: tx.interpolate({ inputRange: input, outputRange: scaleOut }),
+      margin: tx.interpolate({ inputRange: input, outputRange: marginOut }),
+    };
+  };
+
+  return (
+    <View style={styles.section}>
+      {/* Title */}
+      <View style={styles.primeHeaderRow}>
+        <GR1Icon size={20} />
+        <Text style={styles.primeTitle}>Trade Picks by AI</Text>
+      </View>
+
+      {/* Wins card */}
+      <View style={styles.primeCard}>
+        <Text style={styles.primeEyebrow}>Recent wins</Text>
+
+        <View
+          style={styles.primeScrollWrap}
+          onLayout={(e) => setVw(e.nativeEvent.layout.width)}
+        >
+          <Animated.View
+            style={[styles.primeMarqueeRow, { transform: [{ translateX: tx }] }]}
+          >
+            {[...PRIME_MTF_PICKS, ...PRIME_MTF_PICKS].map((p, i) => {
+              const f = focusFor(i);
+              return (
+                <PrimePickCard
+                  key={`${p.ticker}-${i}`}
+                  pick={p}
+                  scale={f.scale}
+                  margin={f.margin}
+                  onPress={onExplore}
+                  onLayout={i === 0
+                    ? (e) => { const w = e.nativeEvent.layout.width; setWc((prev) => prev || w); }
+                    : undefined}
+                />
+              );
+            })}
+          </Animated.View>
+          <PrimeFadeEdge side="left" />
+          <PrimeFadeEdge side="right" />
+        </View>
+
+        <View style={styles.primeVerifiedRow}>
+          <VerifiedIcon size={10} />
+          <Text style={styles.primeVerifiedText}>by SEBI-verified analysts</Text>
+        </View>
+
+        <TouchableOpacity style={styles.primeCtaBtn} activeOpacity={0.85} onPress={onExplore}>
+          <Text style={styles.primeCtaText}>Explore Trade Picks</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ─── Activated Prime MTF picks (post-activation) ──────────────────────────────
+// Figma 209:86005 — replaces the upsell carousel once the user has Prime.
+const ACTIVATED_PRIME_PICKS = [
+  { ticker: 'ETERNAL',    gain: '4.2%', buy: '1894', target: '2194', stoploss: '1500' },
+  { ticker: 'AMBUJACEM', gain: '5.6%', buy: '438',  target: '478',  stoploss: '415'  },
+];
+
+function DoubleUpIcon({ size = 12 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 12 12" fill="none">
+      <Path
+        d="M5.73459 5.98483C5.88104 5.83839 6.11939 5.83839 6.26584 5.98483L9.26584 8.98483C9.41183 9.1313 9.41209 9.3688 9.26584 9.51511C9.1194 9.66156 8.88104 9.66155 8.73459 9.51511L6.00022 6.77976L3.26584 9.51511C3.1194 9.66156 2.88104 9.66155 2.73459 9.51511C2.58835 9.3688 2.58859 9.1313 2.73459 8.98483L5.73459 5.98483ZM5.73459 2.48483C5.88104 2.33839 6.11939 2.33839 6.26584 2.48483L9.26584 5.48483C9.41183 5.6313 9.41209 5.8688 9.26584 6.01511C9.1194 6.16156 8.88104 6.16155 8.73459 6.01511L6.00022 3.27976L3.26584 6.01511C3.1194 6.16156 2.88104 6.16155 2.73459 6.01511C2.58835 5.8688 2.58859 5.63129 2.73459 5.48483L5.73459 2.48483Z"
+        fill="#4452D6"
+      />
+    </Svg>
+  );
+}
+
+function ActivatedPrimePickCard({ pick, onPress, onBuy }: {
+  pick: typeof ACTIVATED_PRIME_PICKS[number];
+  onPress?: () => void;
+  onBuy?: () => void;
+}) {
+  const tick = useLiveTick();
+  const call = CALLS.find(c => c.ticker === pick.ticker);
+  const basePrice = call ? call.basePrice : parseFloat(pick.buy);
+  const basePct   = call ? call.basePct   : 0;
+  const target    = call ? call.target    : parseFloat(pick.target);
+  const L = live(basePrice, basePct, pick.ticker, tick, 0.4);
+  const mktStr = inr(L.price, 2);
+  const potential = L.price > 0 ? ((target - L.price) / L.price * 100) : 0;
+  const potentialStr = (potential >= 0 ? '+' : '') + potential.toFixed(1) + '%';
+
+  return (
+    <View style={styles.actCard}>
+      <TouchableOpacity style={{ flex: 1 }} activeOpacity={0.9} onPress={onPress}>
+        <View style={{ gap: 8 }}>
+          <View style={styles.actCardTopRow}>
+            <View style={styles.actCardId}>
+              <View style={styles.actAvatar}>
+                <StockLogo logo={DSL(pick.ticker)} ticker={pick.ticker} size={24} radius={4} />
+              </View>
+              <Text style={styles.actName} numberOfLines={1} adjustsFontSizeToFit>{pick.ticker}</Text>
+            </View>
+            <View style={styles.actTag}>
+              <DoubleUpIcon size={12} />
+              <Text style={styles.actTagText}>{potentialStr}</Text>
+            </View>
+          </View>
+
+          <View style={styles.actDottedDivider} />
+
+          <View style={{ gap: 8 }}>
+            <View style={styles.actDetailRow}>
+              <Text style={styles.actDetailLabel}>Mkt</Text>
+              <Text style={styles.actDetailValue}>{mktStr}</Text>
+            </View>
+            <View style={styles.actDetailRow}>
+              <Text style={styles.actDetailLabel}>TGT</Text>
+              <Text style={styles.actDetailValue}>{pick.target}</Text>
+            </View>
+            <View style={styles.actDetailRow}>
+              <Text style={styles.actDetailLabel}>SL</Text>
+              <Text style={styles.actDetailValue}>{pick.stoploss}</Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.actBuyBtn} activeOpacity={0.85} onPress={onBuy}>
+        <Text style={styles.actBuyText}>Buy</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function ActivatedPrimeMtfSection({ onSeeAll, onCardPress, onBuy }: { onSeeAll?: () => void; onCardPress?: (ticker: string) => void; onBuy?: (o: { name: string; buy: string; stoploss: string; target?: string; market?: string }) => void }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.actHeader}>
+        <View style={styles.actHeaderLeft}>
+          <View style={styles.actTitleRow}>
+            <SvgXml xml={PRIME_CIRCLE_UP_SVG} width={20} height={20} />
+            <Text style={styles.actTitle}>Trade Picks by AI</Text>
+          </View>
+        </View>
+        <TouchableOpacity style={styles.actSeeAll} activeOpacity={0.7} onPress={onSeeAll}>
+          <Text style={styles.actSeeAllText}>See all</Text>
+          <Text style={styles.actSeeAllChevron}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.actCardsRow}>
+        {ACTIVATED_PRIME_PICKS.map((p) => (
+          <ActivatedPrimePickCard
+            key={p.ticker}
+            pick={p}
+            onPress={() => onCardPress?.(p.ticker)}
+            onBuy={() => onBuy?.({ name: p.ticker, buy: p.buy, stoploss: p.stoploss, target: p.target })}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ─── Positions tab (Figma 346:100425) ──────────────────────────────────────────
+// Two small action-bar glyphs: an "adjust" (sliders) icon and a crosshair.
+// List/sort glyph beside the "N OPEN" label on the Positions tab.
+function ListViewIcon({ size = 20 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+      <Path d="M4 6h12M4 10h9M4 14h6" stroke={colors.contentPrimary} strokeWidth={1.5} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// Prime marker on a position row: starts as the bare gem, then after 1s expands
+// into an "Update" tag (accent-subtle pill) and stays there.
+function PrimeUpdateTag() {
+  return (
+    <View style={styles.posUpdateTag}>
+      <SvgXml xml={PRIME_CIRCLE_UP_SVG} width={14} height={14} />
+    </View>
+  );
+}
+
+function PrimeSlToast({ updateSl, onUpdate, onDismiss }: { updateSl: string; onUpdate: () => void; onDismiss: () => void }) {
+  const [entered, setEntered] = useState(false);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(-8)).current;
+  const maxHeight = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      maxHeight.setValue(120);
+      setEntered(true);
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
+        Animated.timing(translateY, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
+      ]).start();
+    }, 1000);
+    return () => clearTimeout(id);
+  }, []);
+
+  const animateOut = (cb: () => void) => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 0, duration: 260, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
+      Animated.timing(translateY, { toValue: -6, duration: 260, easing: Easing.in(Easing.cubic), useNativeDriver: false }),
+      Animated.timing(maxHeight, { toValue: 0, duration: 320, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }),
+    ]).start(({ finished }) => { if (finished) cb(); });
+  };
+
+  const handleUpdate = () => { Haptics.selectionAsync(); animateOut(onUpdate); };
+  const handleDismiss = () => { animateOut(onDismiss); };
+
+  return (
+    <Animated.View
+      style={[styles.slToastWrap, { opacity, transform: [{ translateY }], maxHeight }]}
+      pointerEvents={entered ? 'auto' : 'none'}
+    >
+      <View style={styles.slDottedLine} pointerEvents="none">
+        {Array.from({ length: 60 }).map((_, i) => <View key={i} style={styles.slDot} />)}
+      </View>
+      <View style={styles.slToastRow}>
+        <View style={styles.slToastLeft}>
+          <SvgXml xml={PRIME_CIRCLE_UP_SVG} width={20} height={20} />
+          <Text style={styles.slToastText} numberOfLines={1}>Update SL to ₹{updateSl}</Text>
+        </View>
+        <View style={styles.slToastRight}>
+          <TouchableOpacity style={[styles.slOutlineBtn, styles.slOutlineBtnSelected]} onPress={handleUpdate} activeOpacity={0.7}>
+            <HugeiconsIcon icon={Tick02Icon} size={16} color={colors.contentPositive} strokeWidth={2} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.slOutlineBtn} onPress={handleDismiss} activeOpacity={0.7}>
+            <HugeiconsIcon icon={Cancel01Icon} size={16} color={colors.contentSecondary} strokeWidth={1.5} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+function SnackbarSL({ name, qty, onDone }: { name: string; qty: number; onDone: () => void }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(16)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 240, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+    const id = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: 16, duration: 200, useNativeDriver: true }),
+      ]).start(({ finished }) => { if (finished) onDone(); });
+    }, 3000);
+    return () => clearTimeout(id);
+  }, []);
+
+  return (
+    <Animated.View style={[styles.snackbar, { opacity, transform: [{ translateY }] }]}>
+      <View style={styles.snackbarIcon}>
+        <HugeiconsIcon icon={Tick02Icon} size={16} color="#fff" strokeWidth={2} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.snackbarTitle}>SL updated</Text>
+        <Text style={styles.snackbarSub}>{name}{'  ·  '}{qty} qty</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+function PickUpdateStrip({ onExit, onDismiss }: { onExit?: () => void; onDismiss?: () => void }) {
+  const lineW = SW - 32;
+  return (
+    <View style={pickUpdateStyles.strip}>
+      <Svg height={1} width={lineW} style={pickUpdateStyles.dashedLine}>
+        <SvgLine x1={0} y1={0.5} x2={lineW} y2={0.5} stroke={colors.borderPrimary} strokeWidth={1} strokeDasharray="6,4" />
+      </Svg>
+      <View style={pickUpdateStyles.left}>
+        <GR1Icon size={20} />
+        <Text style={pickUpdateStyles.label}>Exit all &amp; book full profit</Text>
+      </View>
+      <View style={pickUpdateStyles.actions}>
+        <TouchableOpacity
+          style={pickUpdateStyles.exitBtn}
+          activeOpacity={0.7}
+          onPress={onExit}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        >
+          <HugeiconsIcon icon={FlashIcon} size={16} color={colors.contentNegative} strokeWidth={1.5} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={pickUpdateStyles.dismissBtn}
+          activeOpacity={0.7}
+          onPress={onDismiss}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={16} color={colors.contentSecondary} strokeWidth={1.5} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const pickUpdateStyles = StyleSheet.create({
+  strip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  dashedLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  left: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  label: { flex: 1, fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8, opacity: 0.8 },
+  exitBtn: {
+    width: 32, height: 32, borderRadius: 8,
+    backgroundColor: colors.backgroundNegativeSubtle,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  dismissBtn: {
+    width: 32, height: 32, borderRadius: 8,
+    borderWidth: 1, borderColor: colors.borderPrimary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+});
+
+function PositionRow({ p, onPress, exited = false, onExit, showStrip = false }: { p: Position; onPress?: () => void; exited?: boolean; onExit?: () => void; showStrip?: boolean }) {
+  const tick = useLiveTick();
+  const liveL = live(p.mkt, 0, p.name, tick, 2);
+  // Capture live price the instant the user taps exit; freeze from that point on
+  const livePriceRef = useRef(liveL.price);
+  livePriceRef.current = liveL.price;
+  const [frozenPrice, setFrozenPrice] = useState<number | null>(null);
+  useEffect(() => {
+    if (exited && frozenPrice === null) setFrozenPrice(livePriceRef.current);
+  }, [exited]);
+  const L = exited && frozenPrice !== null ? { price: frozenPrice } : liveL;
+  const ret = (L.price - p.avg) * p.qty;
+  const pos = ret >= 0;
+  const dim = colors.contentSecondary;
+  const retColor = exited ? dim : (pos ? colors.contentPositive : colors.contentNegative);
+  const sign = pos ? '+' : '-';
+  const [stripVisible, setStripVisible] = useState(false);
+  const [stripDismissed, setStripDismissed] = useState(false);
+  useEffect(() => {
+    if (!showStrip) return;
+    const t = setTimeout(() => setStripVisible(true), 2000);
+    return () => clearTimeout(t);
+  }, [showStrip]);
+  return (
+    <View>
+      <TouchableOpacity style={styles.posItem} activeOpacity={0.7} onPress={onPress}>
+        <View style={styles.posData}>
+          <View style={styles.posTopRow}>
+            {/* Left: type (+ optional prime icon) / name / avg */}
+            <View style={styles.posLeftStack}>
+              <View style={styles.posTypeRow}>
+                <Text style={[styles.posType, exited && { color: dim }]}>{p.type}</Text>
+                {p.prime && <PrimeUpdateTag />}
+              </View>
+              <Text style={[styles.posName, exited && { color: dim }]}>{p.name}</Text>
+              <Text style={[styles.posAvg, exited && { color: dim }]}>Avg ₹{inr(p.avg)}</Text>
+            </View>
+            {/* Right: qty / return / mkt */}
+            <View style={styles.posRightStack}>
+              <Text style={[styles.posQtyPill, exited && { color: dim }]}>+{p.qty}</Text>
+              <Text style={[styles.posReturn, { color: retColor }]}>{sign}₹{inr(Math.abs(ret))}</Text>
+              <Text style={[styles.posMkt, exited && { color: dim }]}>Mkt ₹{inr(L.price)}</Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+      {showStrip && stripVisible && !stripDismissed && !exited && (
+        <PickUpdateStrip
+          onExit={() => { onExit?.(); setStripDismissed(true); }}
+          onDismiss={() => setStripDismissed(true)}
+        />
+      )}
+      <View style={styles.posRowDivider} />
+    </View>
+  );
+}
+
+function PositionsTab({ positions, onSelect, onUpdate }: { positions: Position[]; onSelect?: (p: Position) => void; onUpdate?: (p: Position) => void }) {
+  const tick = useLiveTick();
+  const [exitedKeys, setExitedKeys] = useState<Set<string>>(new Set());
+  const [frozenTotalReturns, setFrozenTotalReturns] = useState<number | null>(null);
+  const allExited = positions.length > 0 && exitedKeys.size >= positions.length;
+  if (positions.length === 0) {
+    return (
+      <View style={styles.posEmpty}>
+        <Text style={styles.posEmptyTitle}>No open positions</Text>
+        <Text style={styles.posEmptySub}>Your MTF and intraday positions will show up here.</Text>
+      </View>
+    );
+  }
+
+  const liveTotal = positions.reduce((sum, p) => {
+    const L = live(p.mkt, 0, p.name, tick, 2);
+    return sum + (L.price - p.avg) * p.qty;
+  }, 0);
+  // Freeze the card the moment the last position is exited
+  const totalReturns = allExited && frozenTotalReturns !== null ? frozenTotalReturns : liveTotal;
+  useEffect(() => {
+    if (allExited && frozenTotalReturns === null) setFrozenTotalReturns(liveTotal);
+  }, [allExited]);
+  const pos = totalReturns >= 0;
+
+  return (
+    <View>
+      {/* Section header */}
+      <View style={styles.posSectionHeader}>
+        <Text style={styles.posSectionTitle}>MTF positions ({positions.length})</Text>
+        <Text style={styles.posChevron}>⌃</Text>
+      </View>
+
+      {/* Summary card */}
+      <View style={styles.posSummaryWrap}>
+        <View style={styles.posSummaryCard}>
+          <View style={styles.posSummaryLeft}>
+            <Text style={styles.posSummaryLabel}>MTF returns</Text>
+            <Text style={[styles.posSummaryValue, { color: pos ? colors.contentPositive : colors.contentNegative }]}>
+              {pos ? '+' : '-'}{inr(Math.abs(totalReturns))}
+            </Text>
+          </View>
+          <TouchableOpacity activeOpacity={0.7}>
+            <Text style={styles.posViewDetails}>View details</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Positions list */}
+      {positions.map((p, i) => (
+        <PositionRow
+          key={`${p.name}-${i}`}
+          p={p}
+          onPress={() => onSelect?.(p)}
+          exited={exitedKeys.has(p.name)}
+          onExit={() => setExitedKeys((prev) => new Set(prev).add(p.name))}
+          showStrip={i >= positions.length - 2}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ─── Position detail bottom sheet (Figma 267:9XXXX) ────────────────────────────
+// Tapping a position row opens this: a summary card (with an "Update SL" Prime
+// action) over a list of quick actions. Slides up from the bottom, taps-out to
+// dismiss; sits above the bottom nav.
+function ChevronRightIcon({ size = 20, color = colors.contentSecondary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+      <Path d="M7.5 4l5 6-5 6" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function PositionDetailSheet({ position, onClose, onUpdate }: { position: Position | null; onClose: () => void; onUpdate?: (p: Position) => void }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const visible = position != null;
+
+  // SL-update toast flow: 'prompt' shows the "Update" CTA; tapping it applies the
+  // suggested stop (slUpdated swaps the value in the row above) and shows the
+  // transient 'done' confirmation, which then smoothly collapses to 'hidden'.
+  const [slUpdated, setSlUpdated] = useState(false);
+  const [toastPhase, setToastPhase] = useState<'prompt' | 'done' | 'hidden'>('prompt');
+  // Drives the toast collapse: 1 = fully shown, 0 = collapsed (height + opacity).
+  const toastCollapse = useRef(new Animated.Value(1)).current;
+  const [toastH, setToastH] = useState(0);
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: visible ? 1 : 0,
+      duration: visible ? 280 : 200,
+      easing: visible ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [visible, anim]);
+
+  // Reset the SL-update state whenever a fresh position is opened.
+  useEffect(() => {
+    if (visible) { setSlUpdated(false); setToastPhase('prompt'); toastCollapse.setValue(1); }
+  }, [visible, position?.name]);
+
+  if (!position) return null;
+
+  const ret = positionReturns(position);
+  const pos = ret >= 0;
+  const retColor = pos ? colors.contentPositive : colors.contentNegative;
+  const sign = pos ? '+' : '-';
+  const sl = position.slLabel ?? '495.00';
+  const tgt = position.tgtLabel ?? '510.00';
+  // Suggested Prime update: a tightened stop loss (target is left unchanged).
+  const slNum = parseFloat(String(sl).replace(/[^0-9.]/g, '')) || 0;
+  const updateSl = slNum ? String(Math.round(slNum + 21)) : '498';
+  // Only the SL changes on "Update"; the target stays as-is.
+  const displaySl = slUpdated ? `${updateSl}.00` : sl;
+  const displayTgt = tgt;
+
+  const handleUpdate = () => {
+    Haptics.selectionAsync(); // mini haptic tick
+    setSlUpdated(true);      // swap the SL value in the row above
+    setToastPhase('done');  // show the "Done" confirmation
+    if (position) onUpdate?.(position); // revert the list row to gem-only
+    // Hold the confirmation, then smoothly collapse the toast (height + fade).
+    setTimeout(() => {
+      Animated.timing(toastCollapse, {
+        toValue: 0,
+        duration: 360,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: false, // height can't run on the native driver
+      }).start(({ finished }) => {
+        if (finished) setToastPhase('hidden');
+      });
+    }, 1100);
+  };
+
+  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [640, 0] });
+
+  const ACTIONS: { icon: (s: number) => React.ReactNode; label: string }[] = [
+    { icon: (s) => <TargetIcon size={s} />, label: 'Add Stoploss / Target' },
+    { icon: (s) => <HugeiconsIcon icon={ArrowDataTransferHorizontalIcon} size={s} color={colors.contentPrimary} strokeWidth={1.8} />, label: 'Convert to Delivery' },
+    { icon: (s) => <ListViewIcon size={s} />, label: 'Position details' },
+    { icon: (_s) => <SvgXml xml={PRIME_CIRCLE_UP_SVG} width={20} height={20} />, label: 'Stock pick details' },
+  ];
+
+  // Inner sheet body — shared across web and native renders.
+  const sheetBody = (
+    <>
+      {/* Summary card */}
+      <View style={styles.psCardWrap}>
+        <View style={styles.psCard}>
+          <View style={styles.psCardTop}>
+            <View style={styles.psCardCol}>
+              <View style={styles.psTypeRow}>
+                <Text style={styles.posType}>{position.type}</Text>
+                {position.prime && <SvgXml xml={PRIME_CIRCLE_UP_SVG} width={14} height={14} />}
+              </View>
+              <View style={styles.psNameRow}>
+                <Text style={styles.psName}>{position.name}</Text>
+                <ChevronRightIcon size={18} color={colors.contentPrimary} />
+              </View>
+              <Text style={styles.posMkt}>Mkt ₹{inr(position.mkt)}</Text>
+            </View>
+            <View style={styles.psCardColRight}>
+              <Text style={styles.posQtyPill}>+{position.qty}</Text>
+              <Text style={[styles.posReturn, { color: retColor }]}>{sign}₹{inr(Math.abs(ret))}</Text>
+              <Text style={styles.posMkt}>Avg ₹{inr(position.avg)}</Text>
+            </View>
+          </View>
+          <View style={styles.psCardDivider} />
+          <View style={styles.psSlContainer}>
+            <View style={styles.psSlRow}>
+              <Text style={styles.psSlTgt}>
+                <Text style={styles.psSlLabel}>SL </Text>{`₹${displaySl}`}
+                <Text style={styles.psSlLabel}>{`  /  `}</Text>
+                <Text style={styles.psSlLabel}>TGT </Text>{`₹${displayTgt}`}
+              </Text>
+              <View style={styles.psSlRight}>
+                <Text style={styles.psQty}>+100</Text>
+                <ChevronRightIcon size={16} />
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Action list */}
+      <View style={styles.psActions}>
+        {ACTIONS.map((a, i) => (
+          <View key={a.label}>
+            <TouchableOpacity style={styles.psActionRow} activeOpacity={0.7}>
+              {a.icon(20)}
+              <Text style={styles.psActionText}>{a.label}</Text>
+            </TouchableOpacity>
+            {i < ACTIONS.length - 1 && <View style={styles.psActionDivider} />}
+          </View>
+        ))}
+      </View>
+
+      {/* Docked Buy / Exit buttons */}
+      <View style={styles.psDocked}>
+        <View style={styles.psDockedDivider} />
+        <View style={styles.psButtonRow}>
+          <TouchableOpacity style={[styles.psButton, styles.psButtonBuy]} activeOpacity={0.85}>
+            <Text style={styles.psButtonText}>Buy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.psButton, styles.psButtonExit]} activeOpacity={0.85}>
+            <Text style={styles.psButtonText}>Exit</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </>
+  );
+
+  // Native: just the white sheet card — the backdrop overlay is managed by the App.tsx
+  // level wrapper, which renders this component at the SafeAreaProvider root.
+  if (Platform.OS !== 'web') {
+    return (
+      <View style={{
+        backgroundColor: colors.backgroundSurfaceZ1,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingTop: 24,
+        overflow: 'hidden',
+      }}>
+        {sheetBody}
+      </View>
+    );
+  }
+
+  // Web: absoluteFill overlay with custom slide animation.
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <TouchableOpacity style={styles.psBackdrop} activeOpacity={1} onPress={onClose} />
+      <Animated.View style={[styles.psSheet, { transform: [{ translateY }] }]}>
+        {sheetBody}
+      </Animated.View>
     </View>
   );
 }
@@ -665,7 +1491,10 @@ function VolumeShockersSection() {
       </View>
       <View style={styles.volumeCardWrap}>
         <View style={styles.volumeCard}>
-          {VOLUME_SHOCKERS.map((s, i) => (
+          {VOLUME_SHOCKERS.map((s, i) => {
+            const L = live(100, pctNum(s.pct), s.ticker, getLiveTick(), 8);
+            const pct = `+${Math.max(0, Math.round(L.pct))}%`;
+            return (
             <View key={s.ticker}>
               <TouchableOpacity style={styles.volumeRow} activeOpacity={0.7}>
                 <View style={styles.companyAvatarSm}>
@@ -673,7 +1502,7 @@ function VolumeShockersSection() {
                 </View>
                 <Text style={styles.volumeName} numberOfLines={1}>{s.name}</Text>
                 <View style={styles.volumeEnd}>
-                  <Text style={styles.volumePct}>{s.pct}</Text>
+                  <Text style={styles.volumePct}>{pct}</Text>
                   <Text style={styles.volumeVol}>{s.volume}</Text>
                 </View>
               </TouchableOpacity>
@@ -683,7 +1512,8 @@ function VolumeShockersSection() {
                 </View>
               )}
             </View>
-          ))}
+            );
+          })}
           <View style={styles.volumeSeeMore}>
             <TouchableOpacity style={styles.volumeSeeMoreInner} activeOpacity={0.7}>
               <Text style={styles.volumeSeeMoreText}>See more</Text>
@@ -705,6 +1535,10 @@ const MOST_BOUGHT_ETFS = [
 ];
 
 function EtfStackCard({ item }: { item: (typeof MOST_BOUGHT_ETFS)[0] }) {
+  const L = live(priceNum(item.price), (item.positive ? 1 : -1) * pctNum(item.change), item.name, getLiveTick(), 0.4);
+  const price = `₹${inr(L.price)}`;
+  const change = `${L.changeAbs >= 0 ? '+' : '-'}₹${inr(Math.abs(L.changeAbs))} (${Math.abs(L.pct).toFixed(2)}%)`;
+  const pos = L.pos;
   return (
     <View style={styles.etfStackWrap}>
       {/* Stacked "deck" hint behind the card */}
@@ -723,9 +1557,9 @@ function EtfStackCard({ item }: { item: (typeof MOST_BOUGHT_ETFS)[0] }) {
             </View>
           </View>
           <View style={styles.etfDataWrap}>
-            <Text style={styles.etfPrice}>{item.price}</Text>
-            <Text style={[styles.etfChange, { color: item.positive ? colors.contentPositive : colors.contentNegative }]}>
-              {item.change}
+            <Text style={styles.etfPrice}>{price}</Text>
+            <Text style={[styles.etfChange, { color: pos ? colors.contentPositive : colors.contentNegative }]}>
+              {change}
             </Text>
           </View>
         </View>
@@ -979,20 +1813,23 @@ function SectorsTrendingSection() {
       </View>
       <View style={styles.sectorsCardWrap}>
         <View style={styles.sectorsCard}>
-          {TRENDING_SECTORS.map((s) => (
+          {TRENDING_SECTORS.map((s) => {
+            const L = live(100, s.pct, s.name, getLiveTick(), 0.3);
+            return (
             <View key={s.name} style={styles.sectorRow}>
               <View style={styles.sectorNameWrap}>
                 <SectorIcon kind={s.kind} />
                 <Text style={styles.sectorName} numberOfLines={1}>{s.name}</Text>
               </View>
               <View style={styles.sectorBarWrap}>
-                <SectorBar pct={s.pct} />
-                <Text style={[styles.sectorPct, { color: s.pct >= 0 ? colors.contentPositive : colors.contentNegative }]}>
-                  {s.pct >= 0 ? '+' : ''}{s.pct.toFixed(2)}%
+                <SectorBar pct={L.pct} />
+                <Text style={[styles.sectorPct, { color: L.pct >= 0 ? colors.contentPositive : colors.contentNegative }]}>
+                  {L.pct >= 0 ? '+' : ''}{L.pct.toFixed(2)}%
                 </Text>
               </View>
             </View>
-          ))}
+            );
+          })}
           <View style={styles.sectorsSeeMore}>
             <TouchableOpacity style={styles.sectorsSeeMoreInner} activeOpacity={0.7}>
               <Text style={styles.sectorsSeeMoreText}>See all sectors</Text>
@@ -1048,19 +1885,39 @@ function BottomNav({ activeNav, onNavPress }: { activeNav: number; onNavPress: (
   );
 }
 
+// Preserved Explore scroll offset — HomePage remounts on navigation, so we
+// restore where the user left off when they return.
+let exploreScrollY = 0;
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
-export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { onNavigateToStocks: (stock: StockConfig) => void; onNavigateToProfile?: () => void }) {
+export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNavigateToPrime, onNavigateToPrimeListing, onNavigateToPrimeStock, onNavigateToPrimeExploreCard, onBuy, primeActivated, positions, initialTab, onInitialTabConsumed, onNativePositionPress }: { onNavigateToStocks: (stock: StockConfig) => void; onNavigateToProfile?: () => void; onNavigateToPrime?: () => void; onNavigateToPrimeListing?: () => void; onNavigateToPrimeStock?: (ticker: string) => void; onNavigateToPrimeExploreCard?: (ticker: string) => void; onBuy?: (o: { name: string; buy: string; stoploss: string; target?: string; market?: string }) => void; primeActivated?: boolean; positions?: Position[]; initialTab?: number | null; onInitialTabConsumed?: () => void; onNativePositionPress?: (p: Position) => void }) {
   const { mode } = useTheme();
   styles = makeStyles();
-  const [activeTab, setActiveTab] = useState(0);
+  useLiveTick(); // re-render the whole screen every 2s so prices jitter
+  const [activeTab, setActiveTab] = useState(initialTab ?? 0);
   const [activeNav, setActiveNav] = useState(0);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const baseRef = useRef<Record<string, Quote>>({});
   const gr1 = useGR1Sheet();
+  // Tapped position → detail bottom sheet (null = closed).
+  const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  // Names of positions whose SL has been updated from the sheet — their list row
+  // reverts to the gem-only state (no "Update" pill).
+  const [updatedPositions, setUpdatedPositions] = useState<Set<string>>(new Set());
+  const [slSnackbar, setSlSnackbar] = useState<{ name: string; qty: number } | null>(null);
+
+  // We seeded activeTab from initialTab on mount; tell the parent it's been
+  // consumed so future returns to Home don't force the tab again.
+  useEffect(() => {
+    if (initialTab != null) onInitialTabConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Collapse the index strip ("ticker") on scroll so the tabs bar
   // sticks just under the search bar.
   const scrollY = useRef(new Animated.Value(0)).current;
+  const exploreScrollRef = useRef<ScrollView>(null);
+  const didRestoreScroll = useRef(false);
   const INDEX_STRIP_HEIGHT = 44;
   const stripHeight = scrollY.interpolate({
     inputRange: [0, INDEX_STRIP_HEIGHT],
@@ -1127,7 +1984,8 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
+    <SafeArea style={{ flex: 1 }}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={colors.backgroundPrimary} />
 
       {/* Fixed header */}
@@ -1166,19 +2024,23 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
             style={styles.indexStrip}
             contentContainerStyle={styles.indexStripContent}
           >
-            {INDICES.map((idx, i) => (
+            {INDICES.map((idx, i) => {
+              const q = quotes[idx.symbol];
+              const baseValue = q ? q.price : priceNum(idx.value);
+              const basePts = (idx.positive ? 1 : -1) * priceNum(idx.change);
+              const basePct = baseValue ? (basePts / baseValue) * 100 : 0;
+              const L = live(baseValue, basePct, idx.symbol, getLiveTick(), 0.12);
+              return (
               <View key={idx.name} style={[styles.indexCard, i > 0 && styles.indexCardGap]}>
                 <Text style={styles.indexName}>{idx.name}</Text>
-                <Text style={styles.indexValue}>{quotes[idx.symbol]
-                  ? quotes[idx.symbol].price.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                  : idx.value}
-                </Text>
+                <Text style={styles.indexValue}>{inr(L.price)}</Text>
                 <ChangeTag
-                  change={fmtIndexChange(idx.symbol, idx.change)}
-                  positive={isPositive(idx.symbol, idx.positive)}
+                  change={`${L.changeAbs >= 0 ? '+' : '-'}${inr(Math.abs(L.changeAbs))}`}
+                  positive={L.pos}
                 />
               </View>
-            ))}
+              );
+            })}
           </ScrollView>
         </Animated.View>
 
@@ -1198,14 +2060,22 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
 
       {/* Scrollable content */}
       <ScrollView
+        ref={exploreScrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false },
+          { useNativeDriver: false, listener: (e: any) => { exploreScrollY = e.nativeEvent.contentOffset.y; } },
         )}
+        onContentSizeChange={() => {
+          // Restore the saved offset once, after content is laid out on remount.
+          if (!didRestoreScroll.current && exploreScrollY > 0) {
+            didRestoreScroll.current = true;
+            exploreScrollRef.current?.scrollTo({ y: exploreScrollY, animated: false });
+          }
+        }}
         onScrollBeginDrag={() => {
           if (!gr1.open) return;
           if (gr1.mode === 'thinking' || gr1.mode === 'answering') {
@@ -1217,6 +2087,8 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
       >
         {activeNav === 2 ? (
           <View style={{ height: 16 }} />
+        ) : activeTab === 2 ? (
+          <PositionsTab positions={positions ?? []} onSelect={Platform.OS !== 'web' && onNativePositionPress ? onNativePositionPress : setSelectedPosition} />
         ) : (
           <>
             {/* Recently viewed */}
@@ -1230,6 +2102,11 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
 
         {/* Top movers */}
         <TopMoversSection onStockPress={onNavigateToStocks} quotes={quotes} />
+
+        {/* Prime MTF picks */}
+        {primeActivated
+          ? <ActivatedPrimeMtfSection onSeeAll={onNavigateToPrimeListing} onCardPress={onNavigateToPrimeExploreCard ?? onNavigateToPrimeStock} onBuy={onBuy} />
+          : <PrimeMtfPicksSection onExplore={onNavigateToPrime} />}
 
         {/* Most traded in MTF */}
         <MostTradedMtfSection onStockPress={onNavigateToStocks} quotes={quotes} />
@@ -1262,8 +2139,23 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile }: { 
 
       <BottomNav activeNav={activeNav} onNavPress={setActiveNav} />
 
+    </SafeArea>
+
+      <PositionDetailSheet
+        position={selectedPosition}
+        onClose={() => setSelectedPosition(null)}
+        onUpdate={(p) => setUpdatedPositions((prev) => new Set(prev).add(p.name))}
+      />
+
       <GR1Layer state={gr1} />
-    </SafeAreaView>
+      {slSnackbar && (
+        <SnackbarSL
+          name={slSnackbar.name}
+          qty={slSnackbar.qty}
+          onDone={() => setSlSnackbar(null)}
+        />
+      )}
+    </View>
   );
 }
 
@@ -1430,7 +2322,7 @@ const makeStyles = () => StyleSheet.create({
     marginVertical: 0,
   },
   section: {
-    paddingTop: 16,
+    paddingTop: 32,    // + 8px prev paddingBottom = 40px between sections
     paddingBottom: 8,
     backgroundColor: colors.backgroundPrimary,
   },
@@ -1621,6 +2513,438 @@ const makeStyles = () => StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
+
+  // Prime MTF picks
+  primeEyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+  },
+  primeBrandEyebrow: {
+    fontFamily: F.sohne,
+    fontWeight: '400',
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: colors.contentAccentSecondary,
+  },
+  primeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginTop: 2,
+  },
+  primeTitle: {
+    fontFamily: F.sohne,
+    fontWeight: '400',
+    fontSize: 18,
+    lineHeight: 28,
+    color: colors.contentPrimary,
+  },
+  primeCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: colors.backgroundSurface,
+    borderWidth: 1,
+    borderColor: colors.borderPrimary,
+    borderRadius: 16,
+    padding: 16,
+    gap: 16,
+  },
+  primeEyebrow: {
+    // heading-eyebrow (tokens.ts `type.headingEyebrow`)
+    fontFamily: F.sohne,
+    fontWeight: '400',
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: colors.contentTertiary,
+    textAlign: 'center',
+  },
+  primeScrollWrap: {
+    position: 'relative',
+    height: PRIME_WRAP_H,
+    justifyContent: 'center',       // center the row so scaled-up cards aren't clipped
+    marginHorizontal: -16,          // bleed picks to the card's inner border
+    overflow: 'hidden',
+  },
+  primeMarqueeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: PRIME_PICK_GAP,
+    paddingLeft: PRIME_PICK_GAP,
+  },
+  primePickCard: {
+    // fixed 86px-wide card; 16px top/bottom padding around the logo + chip stack
+    width: 86,
+    borderWidth: 1,
+    borderColor: colors.borderPrimary,
+    borderRadius: 12,
+    backgroundColor: colors.backgroundSurface,
+    alignItems: 'center',
+    paddingTop: 16,
+    paddingHorizontal: 12,
+    paddingBottom: 16,
+    gap: 12, // logo → % chip
+  },
+  primePickLogoWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primePickTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: colors.backgroundAccentSecondarySubtle,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+  },
+  primePickTagCol: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    gap: 6, // % chip → duration label
+  },
+  primePickProfit: {
+    fontFamily: F.medium,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.contentSecondary,
+    textAlign: 'center',
+  },
+  primePickTagText: {
+    fontFamily: F.medium,
+    fontSize: 14,
+    lineHeight: 18,
+    color: colors.contentAccentSecondary,
+  },
+  primeFadeEdge: {
+    position: 'absolute',
+    top: 0,
+  },
+  primeVerifiedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  primeVerifiedText: {
+    fontFamily: F.medium,
+    fontSize: 10,
+    lineHeight: 12,
+    color: colors.contentDisabled,
+    textAlign: 'center',
+  },
+  primeCtaBtn: {
+    backgroundColor: colors.backgroundAccentSecondarySubtle,
+    borderRadius: 8,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primeCtaText: {
+    fontFamily: F.medium, // body-small-heavy
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.contentAccentSecondary,
+  },
+
+  // Activated Prime MTF picks (Figma 209:86005)
+  actHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    paddingHorizontal: 16,
+  },
+  actHeaderLeft: { flex: 1, gap: 2 },
+  actTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  actEyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  actEyebrowText: {
+    // heading-eyebrow
+    fontFamily: F.sohne,
+    fontWeight: '400',
+    fontSize: 10,
+    lineHeight: 12,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: colors.contentSecondary,
+  },
+  actTitle: {
+    fontFamily: F.sohne,
+    fontWeight: '400',
+    fontSize: 18,
+    lineHeight: 28,
+    color: colors.contentPrimary,
+  },
+  actSeeAll: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  actSeeAllText: {
+    fontFamily: F.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.contentSecondary,
+  },
+  actSeeAllChevron: {
+    fontSize: 18,
+    lineHeight: 20,
+    color: colors.contentSecondary,
+  },
+  actCardsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    marginTop: 16,
+  },
+  actCard: {
+    flex: 1,
+    backgroundColor: colors.backgroundSurface,
+    borderWidth: 1,
+    borderColor: colors.borderPrimary,
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  actCardTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  actCardId: { flex: 1, gap: 4 },
+  actAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    overflow: 'hidden',
+    borderWidth: 0.682,
+    borderColor: 'rgba(68,71,91,0.04)',
+  },
+  actName: {
+    fontFamily: F.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.contentPrimary,
+    flexShrink: 1,
+  },
+  actTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.backgroundAccentSecondarySubtle,
+    borderRadius: 4,
+    paddingHorizontal: 4,
+  },
+  actTagText: {
+    fontFamily: F.sohne,
+    fontWeight: '400' as const,
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#4452D6',
+  },
+  actDottedDivider: {
+    borderTopWidth: 1,
+    borderStyle: 'dotted',
+    borderColor: colors.borderPrimary,
+  },
+  actDetailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  actDetailLabel: {
+    fontFamily: F.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.contentSecondary,
+  },
+  actDetailValue: {
+    fontFamily: F.medium,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.contentPrimary,
+  },
+  actBuyBtn: {
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: colors.backgroundAccentSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actBuyText: {
+    fontFamily: F.medium,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#00825C',
+  },
+
+  // ── Positions tab (Figma 346:100425) ──
+  posSectionHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.backgroundPrimary, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8,
+  },
+  posSectionTitle: { fontFamily: F.sohne, fontWeight: '400', fontSize: 18, lineHeight: 28, color: colors.contentPrimary },
+  posChevron: { fontFamily: F.regular, fontSize: 16, color: colors.contentSecondary },
+  posSummaryWrap: { paddingHorizontal: 16, paddingVertical: 8 },
+  posSummaryCard: {
+    borderWidth: 1, borderColor: colors.borderPrimary, borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center', padding: 16,
+  },
+  posSummaryLeft: { flex: 1, gap: 2 },
+  posSummaryLabel: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+  posSummaryValue: { fontFamily: F.sohne, fontWeight: '400', fontSize: 18, lineHeight: 28 },
+  posViewDetails: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: colors.contentPrimary, textDecorationLine: 'underline' },
+
+
+  posItem: { backgroundColor: colors.backgroundPrimary },
+  posData: { paddingHorizontal: 16, paddingVertical: 12 },
+  posTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  posLeftStack: { gap: 2, width: 141 },
+  posTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  posUpdateTag: { flexDirection: 'row', alignItems: 'center', height: 18, borderRadius: 4, overflow: 'hidden' },
+  posUpdateText: { fontFamily: F.medium, fontSize: 12, lineHeight: 18, color: colors.contentAccentSecondary },
+  slToastWrap: { paddingBottom: 16, overflow: 'hidden' },
+  slDottedLine: { width: '100%', flexDirection: 'row', overflow: 'hidden', height: 1, alignItems: 'center' },
+  slDot: { width: 2, height: 2, borderRadius: 1, backgroundColor: colors.borderPrimary, marginRight: 4, flexShrink: 0 },
+  slToastRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingTop: 12,
+  },
+  slToastLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 },
+  slToastText: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentPrimary, flex: 1 },
+  slToastRight: { flexDirection: 'row', alignItems: 'center', gap: 12, opacity: 0.8 },
+  slOutlineBtn: {
+    width: 32, height: 32, borderRadius: 4,
+    borderWidth: 1, borderColor: colors.borderPrimary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  slOutlineBtnSelected: {
+    backgroundColor: colors.backgroundPositiveSubtle,
+    borderColor: colors.borderPositive,
+  },
+  snackbar: {
+    position: 'absolute', left: 16, right: 16, bottom: 76,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#2A2D2E',
+    borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  snackbarIcon: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: colors.backgroundPositive,
+    alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+  },
+  snackbarTitle: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: '#FFFFFF' },
+  snackbarSub: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: 'rgba(255,255,255,0.6)' },
+  posType: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+  posName: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+  posAvg: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+  posRightStack: { gap: 2, alignItems: 'flex-end' },
+  posQtyPill: { fontFamily: F.medium, fontSize: 12, lineHeight: 18, color: colors.contentAccentSecondary },
+  posReturn: { fontFamily: F.medium, fontSize: 14, lineHeight: 20 },
+  posMkt: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+  posRowDivider: { height: 1, backgroundColor: colors.borderPrimary, marginHorizontal: 16 },
+
+  // Position detail — native full-screen header
+  psNativeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+    backgroundColor: colors.backgroundPrimary,
+  },
+  psNativeCloseBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  psNativeTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontFamily: F.sohne,
+    fontSize: 16,
+    lineHeight: 24,
+    color: colors.contentPrimary,
+  },
+
+  // Position detail bottom sheet
+  psBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  psSheet: {
+    position: 'absolute', left: 0, right: 0, bottom: 0,
+    backgroundColor: colors.backgroundSurfaceZ1,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingTop: 24,
+    overflow: 'hidden',
+  },
+  // "position details" card: surfaceZ1 fill, 1px border, 12 radius, 8px below + 16px sides.
+  psCardWrap: { paddingHorizontal: 16, paddingBottom: 12 },
+  psCard: {
+    backgroundColor: colors.backgroundSurfaceZ1,
+    borderWidth: 1, borderColor: colors.borderPrimary, borderRadius: 12,
+    overflow: 'hidden',
+  },
+  // "position value" row: 16px padding all round, bottom border.
+  psCardTop: {
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
+    padding: 16, gap: 12,
+  },
+  psTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  psCardCol: { flex: 1, gap: 4 },
+  psCardColRight: { alignItems: 'flex-end', gap: 4 },
+  psNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  psName: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+  psCardDivider: { height: 1, backgroundColor: colors.borderPrimary },
+  // "sl - tgt row": pl 16 / pr 12 / py 12, 4px gap between the SL row and Update SL.
+  psSlContainer: { paddingLeft: 16, paddingRight: 12, paddingVertical: 12, gap: 4 },
+  psSlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  psSlTgt: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+  psSlLabel: { color: colors.contentSecondary },
+  psSlRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  psQty: { fontFamily: F.medium, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+  // Prime SL update toast: accent "Update", "SL ₹…" value, dashed "Update" CTA → "✓ Done".
+  // psAcceptCollapse animates height+opacity to slide the toast closed; psAcceptInner
+  // holds the 12px gap above the card so the gap collapses with it.
+  psAcceptCollapse: { overflow: 'hidden' },
+  psAcceptInner: { paddingTop: 12 },
+  psAcceptCard: {
+    backgroundColor: colors.backgroundSurfaceZ1,
+    borderWidth: 1, borderColor: colors.borderPrimary, borderRadius: 12,
+    overflow: 'hidden',
+  },
+  psAcceptRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 8, paddingHorizontal: 16, paddingVertical: 12,
+  },
+  psAcceptLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  // Left "Update" label — accent, Medium 12.
+  psAcceptAccent: { fontFamily: F.medium, fontSize: 12, lineHeight: 18, color: colors.contentAccentSecondary },
+  // "SL ₹498.09" — primary, Regular 12.
+  psAcceptText: {
+    fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentPrimary, flexShrink: 1,
+  },
+  // Right "Update" CTA — tertiary button: primary text, secondary dashed underline.
+  psAcceptBtn: {
+    fontFamily: F.medium, fontSize: 12, lineHeight: 18, color: colors.contentPrimary,
+    textDecorationLine: 'underline',
+    textDecorationColor: colors.contentSecondary,
+  },
+  // "Done" tertiary button — secondary, Medium 12.
+  psDoneRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  psDoneText: { fontFamily: F.medium, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+  // Icon list actions: 56px min-height rows, 16px gap icon→label, inset divider (52px left).
+  psActions: {},
+  psActionRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 16,
+    minHeight: 56, paddingHorizontal: 16, paddingVertical: 12,
+  },
+  psActionDivider: { height: 1, backgroundColor: colors.borderPrimary, marginLeft: 52 },
+  psActionText: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+  // Docked Buy / Exit button group.
+  psDocked: { backgroundColor: colors.backgroundPrimary },
+  psDockedDivider: { height: 1, backgroundColor: colors.borderPrimary },
+  psButtonRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 16 },
+  psButton: {
+    flex: 1, height: 48, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24,
+  },
+  psButtonBuy: { backgroundColor: colors.backgroundAccent },
+  psButtonExit: { backgroundColor: colors.backgroundNegative },
+  psButtonText: { fontFamily: F.medium, fontSize: 16, lineHeight: 24, color: colors.contentOnColour },
+
+
+  posEmpty: { paddingHorizontal: 16, paddingTop: 48, alignItems: 'center', gap: 4 },
+  posEmptyTitle: { fontFamily: F.sohne, fontWeight: '400', fontSize: 16, lineHeight: 24, color: colors.contentPrimary },
+  posEmptySub: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentSecondary, textAlign: 'center' },
 
   // See more card — thumbnails wrap (2/row at the 47% card width) above a
   // "See more ›" link. 3 logos = single row; 4+ logos = 2×2.

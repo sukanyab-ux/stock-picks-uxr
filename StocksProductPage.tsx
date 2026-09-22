@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
   Image,
   Platform,
   Dimensions,
@@ -23,7 +22,9 @@ import Svg, {
   Stop,
   Circle,
   Line as SvgLine,
+  SvgXml,
 } from 'react-native-svg';
+import { PrimePickDetail } from './primePicks';
 import { GR1Icon, useGR1Sheet, GR1Layer } from './GR1Sheet';
 import { HugeiconsIcon } from '@hugeicons/react-native';
 import {
@@ -52,6 +53,7 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
 // ─── Design tokens ───────────────────────────────────────────────────────────
 // Source of truth: ./tokens.ts (mirrors docs/mint-ds-groww-invest-v0.18.md).
 import { colors, fonts as F, useTheme, getMode } from './tokens';
+import SafeArea from './SafeArea';
 
 const TIME_PERIODS = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'All'];
 
@@ -1896,6 +1898,506 @@ function BottomDock() {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
+// ═══ Technicals tab ═══════════════════════════════════════════════════════════
+// Assigned inside TechnicalsTab (not eagerly) — makeTechStyles references consts
+// declared later in this module, so calling it at load time would hit their TDZ.
+let techStyles: ReturnType<typeof makeTechStyles>;
+
+const PRIME_CIRCLE_UP_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><mask id="mask0_2747_244701" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="17" height="16"><path d="M0.000488281 -6.10352e-05H16.0005V15.9999H0.000488281V-6.10352e-05Z" fill="url(#paint0_radial_2747_244701)"/></mask><g mask="url(#mask0_2747_244701)"><path d="M10.4508 7.10576C10.4508 6.39035 10.3101 5.68196 10.0363 5.02099C9.7625 4.35989 9.3608 3.75898 8.85481 3.25301C8.34889 2.74708 7.74847 2.34535 7.08747 2.07153C6.42636 1.7977 5.71765 1.65699 5.00208 1.65699C4.70348 1.65699 4.46143 1.41493 4.46143 1.11634C4.46143 0.817742 4.70348 0.575684 5.00208 0.575684C5.85965 0.575684 6.70907 0.744715 7.50136 1.07289C8.29359 1.40107 9.01365 1.88217 9.61996 2.48849C10.2263 3.09484 10.7074 3.81485 11.0356 4.60705C11.3637 5.39922 11.5322 6.24834 11.5322 7.10576C11.5322 7.40436 11.2901 7.64641 10.9915 7.64641C10.693 7.64634 10.4508 7.4043 10.4508 7.10576Z" fill="#353839"/><path d="M5.54273 8.8976C5.54276 9.613 5.68353 10.3214 5.95727 10.9823C6.23111 11.6434 6.63276 12.2443 7.13872 12.7503C7.64471 13.2562 8.24506 13.658 8.90613 13.9318C9.56719 14.2056 10.276 14.3463 10.9915 14.3463C11.2901 14.3463 11.5322 14.5884 11.5322 14.887C11.5322 15.1856 11.2901 15.4277 10.9915 15.4277C10.134 15.4277 9.28446 15.2586 8.49217 14.9304C7.70001 14.6023 6.97995 14.1212 6.37362 13.5148C5.76733 12.9085 5.28617 12.1885 4.95803 11.3963C4.62994 10.6041 4.46145 9.75499 4.46143 8.8976C4.46143 8.59897 4.70348 8.35693 5.00208 8.35693C5.30059 8.357 5.54273 8.59903 5.54273 8.8976Z" fill="#353839"/><path d="M7.54883 10.5695C8.16843 10.9273 8.85232 11.1596 9.56162 11.253C10.2711 11.3464 10.9922 11.2989 11.6834 11.1138C12.3746 10.9286 13.0226 10.6095 13.5903 10.1739C14.158 9.73827 14.6342 9.19486 14.992 8.57519C15.1413 8.31657 15.4719 8.22797 15.7306 8.37728C15.9892 8.5266 16.0778 8.85724 15.9285 9.11585C15.4997 9.85853 14.9285 10.5097 14.2482 11.0317C13.5679 11.5536 12.7912 11.9367 11.963 12.1587C11.1347 12.3805 10.2706 12.4372 9.42046 12.3253C8.57034 12.2133 7.75077 11.9347 7.00823 11.506C6.74962 11.3567 6.66101 11.0261 6.81033 10.7675C6.95965 10.509 7.29035 10.4203 7.54883 10.5695Z" fill="#353839"/><path d="M8.45258 5.42625C7.83304 5.06856 7.14916 4.83628 6.43987 4.74287C5.73043 4.64947 5.0092 4.69686 4.31802 4.88206C3.6269 5.06727 2.9788 5.38636 2.41114 5.82192C1.84345 6.25753 1.36724 6.80094 1.00945 7.42064C0.860156 7.67921 0.529494 7.76781 0.270905 7.61856C0.0123145 7.46925 -0.0762847 7.13858 0.0730123 6.87999C0.501796 6.13731 1.07291 5.48618 1.75326 4.96412C2.43355 4.44216 3.21024 4.05911 4.03849 3.83719C4.86674 3.61529 5.73088 3.55861 6.58101 3.67053C7.43107 3.78248 8.2507 4.06112 8.99325 4.48981C9.25186 4.63911 9.34046 4.96977 9.19115 5.22836C9.04183 5.48683 8.71113 5.57552 8.45258 5.42625Z" fill="#353839"/><path d="M5.99908 6.31896C5.37953 6.67669 4.83643 7.15279 4.40089 7.72032C3.96528 8.28805 3.64571 8.93637 3.46051 9.62752C3.27534 10.3187 3.22762 11.0395 3.32101 11.7489C3.41441 12.4583 3.64691 13.1424 4.00469 13.7621C4.15399 14.0207 4.06539 14.3514 3.8068 14.5006C3.54821 14.65 3.21756 14.5614 3.06826 14.3028C2.63947 13.5601 2.36112 12.7399 2.24919 11.8897C2.13731 11.0396 2.19392 10.1754 2.41585 9.34718C2.63782 8.51892 3.02079 7.74225 3.54278 7.06195C4.06478 6.38173 4.71589 5.81126 5.45843 5.38252C5.71702 5.23323 6.04768 5.32182 6.19698 5.58042C6.34615 5.83898 6.25762 6.16969 5.99908 6.31896Z" fill="#353839"/><path d="M10.0003 9.67888C10.6198 9.3211 11.163 8.84499 11.5985 8.27746C12.0341 7.70973 12.3537 7.06147 12.5389 6.37028C12.7241 5.67916 12.7718 4.95834 12.6784 4.24895C12.585 3.5395 12.3525 2.85539 11.9947 2.23569C11.8454 1.9771 11.934 1.64644 12.1926 1.49715C12.4512 1.34785 12.7818 1.43645 12.9311 1.69504C13.3599 2.43771 13.6383 3.25788 13.7502 4.10811C13.8621 4.95824 13.8055 5.8224 13.5836 6.65064C13.3616 7.47887 12.9786 8.2556 12.4566 8.93585C11.9346 9.61611 11.2835 10.1866 10.541 10.6153C10.2824 10.7646 9.95173 10.676 9.80241 10.4174C9.6533 10.1588 9.74176 9.82812 10.0003 9.67888Z" fill="#353839"/></g><defs><radialGradient id="paint0_radial_2747_244701" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(8.00049 7.99994) rotate(90) scale(8.3834)"><stop stop-color="white"/><stop offset="0.55" stop-color="white"/><stop offset="1" stop-color="white" stop-opacity="0"/></radialGradient></defs></svg>`;
+
+const PRIME_GEM_SVG_T = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<mask id="mt0" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="2" y="2" width="12" height="12">
+<rect x="8" y="2" width="8.48528" height="8.48528" rx="0.75" transform="rotate(45 8 2)" fill="#D9D9D9"/></mask>
+<g mask="url(#mt0)">
+<path opacity="0.5" d="M8 8.00064V1.99023L14.0099 8.00064H8Z" fill="#223CD3"/>
+<path opacity="0.5" d="M7.99805 7.99936V14.0098L2.00018 7.99936H7.99805Z" fill="#3C2F2F"/>
+<path opacity="0.5" d="M8 7.99936V14.0098L13.9979 7.99936H8Z" fill="#3C2F2F"/>
+<path opacity="0.5" d="M8 8.00064V1.99023L13.9979 8.00064H8Z" fill="#3C2F2F"/>
+<path opacity="0.5" d="M7.99805 8.00064V1.99023L2.00018 8.00064H7.99805Z" fill="#3C2F2F"/>
+<rect x="8" y="2" width="8.48528" height="8.48528" transform="rotate(45 8 2)" fill="#223CD3"/>
+<path d="M8 8.00064V1.99023L10.8151 8.00064H8Z" fill="#3D52D2"/>
+<path d="M8.00781 8.00064V1.99023L1.99793 8.00064H8.00781Z" fill="#B8C0E8"/>
+<path d="M8 7.99125V14.0137L14.0099 7.99125H8Z" fill="#1828BF"/>
+<path d="M8.00781 7.99125V14.0137L1.99793 7.99125H8.00781Z" fill="#597AD8"/>
+<path d="M8.00391 8.00064V1.99023L5.17678 8.00064H8.00391Z" fill="#7D8DE4"/>
+<path d="M7.99219 7.99545V14.0059L5.17707 7.99545H7.99219Z" fill="#4462CC"/>
+<path d="M8 7.99545V14.0059L10.8151 7.99545H8Z" fill="#2741C4"/></g></svg>`;
+
+function DoubleUpFilled({ size = 16, color = colors.contentAccentSecondary }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 12 12" fill="none">
+      <Path d="M5.73459 5.98483C5.88104 5.83839 6.11939 5.83839 6.26584 5.98483L9.26584 8.98483C9.41183 9.1313 9.41209 9.3688 9.26584 9.51511C9.1194 9.66156 8.88104 9.66155 8.73459 9.51511L6.00022 6.77976L3.26584 9.51511C3.1194 9.66156 2.88104 9.66155 2.73459 9.51511C2.58835 9.3688 2.58859 9.1313 2.73459 8.98483L5.73459 5.98483ZM5.73459 2.48483C5.88104 2.33839 6.11939 2.33839 6.26584 2.48483L9.26584 5.48483C9.41183 5.6313 9.41209 5.8688 9.26584 6.01511C9.1194 6.16156 8.88104 6.16155 8.73459 6.01511L6.00022 3.27976L3.26584 6.01511C3.1194 6.16156 2.88104 6.16155 2.73459 6.01511C2.58835 5.8688 2.58859 5.63129 2.73459 5.48483L5.73459 2.48483Z" fill={color} />
+    </Svg>
+  );
+}
+
+// Collapsible section header with optional info icon.
+function TechHeader({ title, info, expanded, onToggle }: { title: string; info?: boolean; expanded: boolean; onToggle: () => void }) {
+  return (
+    <TouchableOpacity style={techStyles.header} onPress={onToggle} activeOpacity={0.7}>
+      <View style={techStyles.headerTitleRow}>
+        <Text style={techStyles.headerTitle}>{title}</Text>
+        {info && <HugeiconsIcon icon={InformationCircleIcon} size={16} color={colors.contentTertiary} strokeWidth={1.5} />}
+      </View>
+      <HugeiconsIcon icon={expanded ? ArrowUp01Icon : ArrowDown01Icon} size={20} color={colors.contentSecondary} strokeWidth={1.5} />
+    </TouchableOpacity>
+  );
+}
+
+function PrimeTechnicalCard({ pick, liveMeta, onBuy }: { pick: PrimePickDetail; liveMeta?: ChartMeta | null; onBuy?: () => void }) {
+  const parseFirst = (s: string) => parseFloat(s.replace(/,/g, '').split(/\s*[-–]\s*/)[0]) || 0;
+  const fmt = (n: number, dec = 0) => n.toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  const sl = parseFirst(pick.stoploss);
+  const target = parseFirst(pick.target);
+  const mkt = liveMeta?.price ?? parseFirst(pick.buy);
+  const BOX_H = 22;
+  const frac = Math.max(0.06, Math.min(0.88, (mkt - sl) / (target - sl)));
+  const potential = ((target - mkt) / mkt) * 100;
+  const sincePositive = !pick.sincePosted?.startsWith('-');
+  const sinceColor = sincePositive ? colors.contentPositive : colors.contentNegative;
+
+  return (
+    <View style={techStyles.primeWrap}>
+      {/* Section header — outside card */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <SvgXml xml={PRIME_CIRCLE_UP_SVG} width={20} height={20} />
+        <Text style={{ fontFamily: F.sohne, fontWeight: '400', fontSize: 20, lineHeight: 28, color: colors.contentPrimary }}>
+          Pick by AI
+        </Text>
+      </View>
+
+      <View style={techStyles.primeCard}>
+        {/* since posted */}
+        <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 }}>
+          {pick.sincePosted ? (
+            <Text>
+              <Text style={{ fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: sinceColor }}>{pick.sincePosted}</Text>
+              <Text style={{ fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentSecondary }}>{' since posted · 1D'}</Text>
+            </Text>
+          ) : null}
+        </View>
+
+        {/* Price track */}
+        <View style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+            <View style={{ alignItems: 'flex-start' }}>
+              <Text style={techStyles.prTrackEndVal}>{fmt(sl)}</Text>
+              <Text style={techStyles.prTrackEndLabel}>SL</Text>
+            </View>
+            <View style={{ flex: frac, height: 2, backgroundColor: colors.borderPrimary, borderRadius: 1, marginTop: BOX_H / 2 - 1 }} />
+            <View style={{ alignItems: 'center' }}>
+              <View style={techStyles.prMktBox}>
+                <Text style={techStyles.prMktPrice}>{fmt(mkt, 2)}</Text>
+              </View>
+              <Text style={techStyles.prMktLabel}>Mkt</Text>
+            </View>
+            <View style={{ flex: 1 - frac, height: 2, backgroundColor: colors.contentAccentSecondary, borderRadius: 1, marginTop: BOX_H / 2 - 1 }} />
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={techStyles.prTrackEndVal}>{fmt(target)}</Text>
+              <Text style={techStyles.prTrackEndLabel}>Target</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Dashed divider */}
+        <View style={{ borderTopWidth: 1, borderStyle: 'dashed', borderColor: colors.borderPrimary }} />
+
+        {/* Footer */}
+        <View style={techStyles.primeFooter}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={techStyles.primeUpsideLabel}>Potential</Text>
+            <View style={techStyles.primeUpsideRow}>
+              <DoubleUpFilled size={16} color={colors.contentAccentSecondary} />
+              <Text style={techStyles.primeUpsideValue}>{`${potential.toFixed(1)}%`}</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={techStyles.primeBuyBtn} activeOpacity={0.85} onPress={onBuy}>
+            <Text style={techStyles.primeBuyText}>Buy</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ── Summary gauge ──
+function lerp(a: number[], b: number[], t: number) {
+  return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`;
+}
+const GAUGE_RED = [237, 85, 51], GAUGE_GRAY = [190, 194, 196], GAUGE_GREEN = [4, 180, 136];
+function gaugeColor(t: number) {
+  return t < 0.5 ? lerp(GAUGE_RED, GAUGE_GRAY, t * 2) : lerp(GAUGE_GRAY, GAUGE_GREEN, (t - 0.5) * 2);
+}
+
+function TechSummarySection() {
+  const [open, setOpen] = useState(true);
+  const bars = Array.from({ length: 24 });
+  return (
+    <View style={techStyles.section}>
+      <TechHeader title="Summary" info expanded={open} onToggle={() => setOpen(!open)} />
+      {open && (
+        <View style={{ gap: 12 }}>
+          <Text style={techStyles.subtleNote}>Based on 1D data</Text>
+          <View style={techStyles.card}>
+            <Text style={techStyles.summaryLead}>Based on technicals, this stock is</Text>
+            <Text style={techStyles.summaryVerdict}>Strongly bullish</Text>
+            <View style={techStyles.gaugeWrap}>
+              <View style={techStyles.gaugeBars}>
+                {bars.map((_, i) => (
+                  <View key={i} style={[techStyles.gaugeBar, { backgroundColor: gaugeColor(i / 23) }]} />
+                ))}
+              </View>
+              <View style={[techStyles.gaugePointer, { left: '82%' }]}>
+                <Svg width={12} height={8} viewBox="0 0 12 8"><Path d="M6 0L11 8H1L6 0Z" fill={colors.contentPrimary} /></Svg>
+              </View>
+            </View>
+            <View style={techStyles.gaugeLegend}>
+              <View style={techStyles.legendItem}>
+                <View style={[techStyles.legendTick, { backgroundColor: colors.contentNegative }]} />
+                <Text style={techStyles.legendLabel}>Bearish</Text>
+                <Text style={techStyles.legendCount}>1</Text>
+              </View>
+              <View style={techStyles.legendItem}>
+                <View style={[techStyles.legendTick, { backgroundColor: colors.contentTertiary }]} />
+                <Text style={techStyles.legendLabel}>Neutral</Text>
+                <Text style={techStyles.legendCount}>5</Text>
+              </View>
+              <View style={techStyles.legendItem}>
+                <View style={[techStyles.legendTick, { backgroundColor: colors.contentPositive }]} />
+                <Text style={techStyles.legendLabel}>Bullish</Text>
+                <Text style={techStyles.legendCount}>18</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Support & Resistance ──
+const SR_LEVELS = [
+  { label: 'R3', value: '429.98' },
+  { label: 'R2', value: '418.60' },
+  { label: 'R1', value: '410.23' },
+  { label: 'S1', value: '391.19' },
+  { label: 'S2', value: '383.97' },
+  { label: 'S3', value: '372.51' },
+];
+function SupportResistanceSection() {
+  const [open, setOpen] = useState(true);
+  return (
+    <View style={techStyles.section}>
+      <TechHeader title="Support and Resistance" info expanded={open} onToggle={() => setOpen(!open)} />
+      {open && (
+        <View style={techStyles.card}>
+          <View style={techStyles.srRow}><Text style={techStyles.srLabel}>R3</Text><Text style={techStyles.srValue}>429.98</Text></View>
+          <View style={techStyles.priceMarker}>
+            <View style={techStyles.priceLine} />
+            <View style={techStyles.pricePill}><Text style={techStyles.pricePillText}>PRICE 420.10</Text></View>
+          </View>
+          <View style={techStyles.srRow}><Text style={techStyles.srLabel}>R2</Text><Text style={techStyles.srValue}>418.60</Text></View>
+          <View style={techStyles.srRow}><Text style={techStyles.srLabel}>R1</Text><Text style={techStyles.srValue}>410.23</Text></View>
+          <View style={techStyles.pivotMarker}>
+            <View style={techStyles.pivotPill}><Text style={techStyles.pivotPillText}>PIVOT 399.77</Text></View>
+          </View>
+          <View style={techStyles.srRow}><Text style={techStyles.srLabel}>S1</Text><Text style={techStyles.srValue}>391.19</Text></View>
+          <View style={techStyles.srRow}><Text style={techStyles.srLabel}>S2</Text><Text style={techStyles.srValue}>383.97</Text></View>
+          <View style={techStyles.srRow}><Text style={techStyles.srLabel}>S3</Text><Text style={techStyles.srValue}>372.51</Text></View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Moving average ──
+const MA_ROWS = [
+  { period: '10D',  sma: '1,48,900', smaC: 'pos', ema: '1,49,200', emaC: 'pos' },
+  { period: '20D',  sma: '1,50,000', smaC: 'mut', ema: '1,50,800', emaC: 'neg' },
+  { period: '50D',  sma: '1,51,900', smaC: 'neg', ema: '1,49,200', emaC: 'pos' },
+  { period: '100D', sma: '1,52,756', smaC: 'neg', ema: '1,51,200', emaC: 'neg' },
+  { period: '200D', sma: '1,44,500', smaC: 'pos', ema: '1,46,300', emaC: 'pos' },
+];
+const CROSSOVER_ROWS = [
+  { term: 'Short term (10 & 20)',  sma: 'Bullish',      smaC: 'pos', ema: 'Bearish', emaC: 'neg' },
+  { term: 'Medium term (20 & 50)', sma: '--',           smaC: 'mut', ema: 'Bullish', emaC: 'pos' },
+  { term: 'Long term (50 & 200)',  sma: 'Golden cross', smaC: 'pos', ema: 'Bearish', emaC: 'neg' },
+];
+function vColor(c: string) {
+  return c === 'pos' ? colors.contentPositive : c === 'neg' ? colors.contentNegative : colors.contentSecondary;
+}
+function MovingAverageSection() {
+  const [open, setOpen] = useState(true);
+  return (
+    <View style={techStyles.section}>
+      <TechHeader title="Moving average" info expanded={open} onToggle={() => setOpen(!open)} />
+      {open && (
+        <View style={{ gap: 16 }}>
+          <View style={techStyles.card}>
+            <View style={techStyles.tableHead}>
+              <Text style={[techStyles.thLabel, { flex: 1 }]}>PERIOD</Text>
+              <Text style={[techStyles.thLabel, techStyles.tColRight]}>SMA</Text>
+              <Text style={[techStyles.thLabel, techStyles.tColRight]}>EMA</Text>
+            </View>
+            {MA_ROWS.map((r) => (
+              <View key={r.period} style={techStyles.tableRow}>
+                <Text style={[techStyles.tCellLabel, { flex: 1 }]}>{r.period}</Text>
+                <Text style={[techStyles.tCellVal, techStyles.tColRight, { color: vColor(r.smaC) }]}>{r.sma}</Text>
+                <Text style={[techStyles.tCellVal, techStyles.tColRight, { color: vColor(r.emaC) }]}>{r.ema}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={techStyles.card}>
+            <View style={techStyles.tableHead}>
+              <Text style={[techStyles.thLabel, { flex: 1.4 }]}>CROSSOVER</Text>
+              <Text style={[techStyles.thLabel, techStyles.tColRight]}>SMA</Text>
+              <Text style={[techStyles.thLabel, techStyles.tColRight]}>EMA</Text>
+            </View>
+            {CROSSOVER_ROWS.map((r) => (
+              <View key={r.term} style={techStyles.tableRow}>
+                <Text style={[techStyles.tCellLabel, { flex: 1.4 }]}>{r.term}</Text>
+                <Text style={[techStyles.tCellVal, techStyles.tColRight, { color: vColor(r.smaC) }]}>{r.sma}</Text>
+                <Text style={[techStyles.tCellVal, techStyles.tColRight, { color: vColor(r.emaC) }]}>{r.ema}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Technicals indicator table ──
+const TECH_ROWS = [
+  { ind: 'RSI (14)',       val: '68.50',   verdict: 'Near overbought',    c: 'neg' },
+  { ind: 'MACD (9,12,26)', val: '-1.77',   verdict: 'Bearish',            c: 'neg' },
+  { ind: 'Beta',           val: '2.71',    verdict: 'High volatility',    c: 'mut' },
+  { ind: 'MFI',            val: '8.93',    verdict: 'Oversold',           c: 'pos' },
+  { ind: 'CCI (14)',       val: '-308.15', verdict: 'Extremely oversold', c: 'pos' },
+  { ind: 'ATR',            val: '78.32',   verdict: 'High volatility',    c: 'mut' },
+  { ind: 'ADX',            val: '53.89',   verdict: 'Extreme trend',      c: 'mut' },
+];
+function TechnicalsTableSection() {
+  const [open, setOpen] = useState(true);
+  return (
+    <View style={techStyles.section}>
+      <TechHeader title="Technicals" info expanded={open} onToggle={() => setOpen(!open)} />
+      {open && (
+        <View style={techStyles.card}>
+          <View style={techStyles.tableHead}>
+            <Text style={[techStyles.thLabel, { flex: 1 }]}>INDICATOR</Text>
+            <Text style={[techStyles.thLabel, { width: 64, textAlign: 'right' }]}>VALUE</Text>
+            <Text style={[techStyles.thLabel, { flex: 1.1, textAlign: 'right' }]}>VERDICT</Text>
+          </View>
+          {TECH_ROWS.map((r) => (
+            <View key={r.ind} style={techStyles.tableRow}>
+              <Text style={[techStyles.tCellLabel, { flex: 1 }]}>{r.ind}</Text>
+              <Text style={[techStyles.tCellVal, { width: 64, textAlign: 'right', color: colors.contentPrimary }]}>{r.val}</Text>
+              <Text style={[techStyles.tCellVal, { flex: 1.1, textAlign: 'right', color: vColor(r.c) }]}>{r.verdict}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ── Delivery volume ──
+const DELIVERY_BARS = [
+  { day: '23 Jul', total: 0.32, delivery: 0.16 },
+  { day: '24 Jul', total: 0.78, delivery: 0.30 },
+  { day: '27 Jul', total: 0.60, delivery: 0.27 },
+  { day: '28 Jul', total: 0.95, delivery: 0.34 },
+  { day: '29 Jul', total: 0.70, delivery: 0.30 },
+];
+const DELIVERY_INSIGHTS = [
+  'Highest delivery percentage in 5 days',
+  'Delivery percentage rising for 3 straight days',
+  'Delivery percentage above 5-day average',
+];
+const DEL_PURPLE = '#7E6FE8';
+const DEL_BLUE = '#5BA0E8';
+const DEL_CHART_H = 120;
+function DeliveryVolumeSection() {
+  const [open, setOpen] = useState(true);
+  const [range, setRange] = useState(0);
+  return (
+    <View style={techStyles.section}>
+      <TechHeader title="Delivery volume percentage" info expanded={open} onToggle={() => setOpen(!open)} />
+      {open && (
+        <View style={{ gap: 16 }}>
+          <View style={techStyles.delPills}>
+            {['Daily', 'Weekly', 'Monthly'].map((p, i) => (
+              <Pill key={p} label={p} selected={i === range} onPress={() => setRange(i)} />
+            ))}
+          </View>
+          <View style={techStyles.card}>
+            <Text style={techStyles.delEyebrow}>Last 5 days</Text>
+            <View style={techStyles.delRow}>
+              <View style={techStyles.delLegendLeft}>
+                <View style={[techStyles.delDot, { backgroundColor: DEL_PURPLE }]} />
+                <Text style={techStyles.delLabel}>Total traded volume</Text>
+              </View>
+              <Text style={techStyles.delValue}>8,51,81,968</Text>
+            </View>
+            <View style={techStyles.delRow}>
+              <View style={techStyles.delLegendLeft}>
+                <View style={[techStyles.delDot, { backgroundColor: DEL_BLUE }]} />
+                <Text style={techStyles.delLabel}>Delivery volume</Text>
+              </View>
+              <Text style={techStyles.delValue}>2,10,46,350</Text>
+            </View>
+            <View style={[techStyles.delRow, { marginTop: 4 }]}>
+              <Text style={techStyles.delPctLabel}>Delivery percentage</Text>
+              <Text style={techStyles.delPctValue}>25.40%</Text>
+            </View>
+
+            {/* grouped bar chart */}
+            <View style={techStyles.delChart}>
+              {DELIVERY_BARS.map((d) => (
+                <View key={d.day} style={techStyles.delGroup}>
+                  <View style={techStyles.delBars}>
+                    <View style={[techStyles.delBar, { height: d.total * DEL_CHART_H, backgroundColor: DEL_PURPLE }]} />
+                    <View style={[techStyles.delBar, { height: d.delivery * DEL_CHART_H, backgroundColor: DEL_BLUE }]} />
+                  </View>
+                  <Text style={techStyles.delDayLabel}>{d.day}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={techStyles.delDivider} />
+
+            <View style={techStyles.delInsightsHead}>
+              <HugeiconsIcon icon={InformationCircleIcon} size={14} color={colors.contentTertiary} strokeWidth={1.5} />
+              <Text style={techStyles.delInsightsTitle}>Insights</Text>
+            </View>
+            {DELIVERY_INSIGHTS.map((t, i) => (
+              <View key={i} style={techStyles.delInsightRow}>
+                <Text style={techStyles.delInsightNum}>{i + 1}</Text>
+                <Text style={techStyles.delInsightText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function TechnicalsTab({ primePick, stockName, liveMeta, onBuy }: { primePick: PrimePickDetail | null; stockName?: string; liveMeta?: ChartMeta | null; onBuy?: (o: { name: string; buy: string; stoploss: string; target?: string; market?: string }) => void }) {
+  techStyles = makeTechStyles();
+  return (
+    <View>
+      <TechSummarySection />
+      <View style={techStyles.sectionDivider} />
+      <SupportResistanceSection />
+      <View style={techStyles.sectionDivider} />
+      <MovingAverageSection />
+      <View style={techStyles.sectionDivider} />
+      <TechnicalsTableSection />
+      <View style={techStyles.sectionDivider} />
+      <DeliveryVolumeSection />
+    </View>
+  );
+}
+
+function makeTechStyles() {
+  return StyleSheet.create({
+    sectionDivider: { height: 0 },
+    section: { paddingHorizontal: 16, paddingVertical: 24, gap: 12 },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    headerTitle: { fontFamily: F.sohne, fontWeight: '400', fontSize: 18, lineHeight: 28, color: colors.contentPrimary },
+    subtleNote: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentSecondary, marginTop: -4 },
+    card: { borderWidth: 1, borderColor: colors.borderPrimary, borderRadius: 16, padding: 16, backgroundColor: colors.backgroundSurface },
+
+    // Prime card
+    primeWrap: { paddingHorizontal: 16, paddingVertical: 24 },
+    primeCard: { backgroundColor: colors.backgroundSurface, borderWidth: 1, borderColor: colors.borderPrimary, borderRadius: 16, overflow: 'hidden' },
+    primeHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, paddingBottom: 8, paddingHorizontal: 16 },
+    primeEyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    primeEyebrow: { fontFamily: F.sohne, fontWeight: '400', fontSize: 10, lineHeight: 12, letterSpacing: 2, textTransform: 'uppercase', color: colors.contentSecondary },
+    primeAgo: { fontFamily: F.medium, fontSize: 10, lineHeight: 12, color: colors.contentTertiary },
+    primeBody: { borderBottomWidth: 1, borderBottomColor: colors.borderPrimary, paddingTop: 8, paddingBottom: 16, paddingHorizontal: 16, gap: 15 },
+    primeRationaleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    primeRationale: { flex: 1, fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+    dotted: { borderTopWidth: 1, borderStyle: 'dotted', borderColor: colors.borderPrimary },
+    detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    detailLabel: { flex: 1, fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentSecondary },
+    detailValue: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: colors.contentPrimary, textAlign: 'right' },
+    primeFooter: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
+    primeUpsideLabel: { fontFamily: F.sohne, fontWeight: '400', fontSize: 10, lineHeight: 12, letterSpacing: 2, textTransform: 'uppercase', color: colors.contentSecondary },
+    primeUpsideRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+    primeUpsideValue: { fontFamily: F.medium, fontSize: 16, lineHeight: 24, color: colors.contentAccentSecondary },
+    primeBuyBtn: { flex: 1, height: 40, borderRadius: 8, backgroundColor: colors.backgroundAccentSubtle, alignItems: 'center', justifyContent: 'center' },
+    primeBuyText: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: '#00825C' },
+
+    // Price track (V2-style)
+    prTrackEndVal: { fontFamily: F.medium, fontSize: 14, lineHeight: 22, color: colors.contentPrimary },
+    prTrackEndLabel: { fontFamily: F.regular, fontSize: 12, lineHeight: 16, color: colors.contentSecondary },
+    prMktBox: { height: 22, borderWidth: 1, borderColor: colors.borderPrimary, borderRadius: 6, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.backgroundPrimary },
+    prMktPrice: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+    prMktLabel: { fontFamily: F.regular, fontSize: 12, lineHeight: 16, color: colors.contentSecondary, marginTop: 2 },
+
+    // Mini chart
+
+    // Summary
+    summaryLead: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+    summaryVerdict: { fontFamily: F.sohne, fontWeight: '400', fontSize: 18, lineHeight: 28, color: colors.contentPositive, marginTop: 2 },
+    gaugeWrap: { marginTop: 16, position: 'relative' },
+    gaugeBars: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 30 },
+    gaugeBar: { flex: 1, height: 30, borderRadius: 2 },
+    gaugePointer: { position: 'absolute', bottom: -8, marginLeft: -6 },
+    gaugeLegend: { flexDirection: 'row', gap: 24, marginTop: 20 },
+    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    legendTick: { width: 3, height: 16, borderRadius: 2 },
+    legendLabel: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: colors.contentSecondary },
+    legendCount: { fontFamily: F.medium, fontSize: 12, lineHeight: 18, color: colors.contentPrimary },
+
+    // Support/resistance
+    srRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
+    srLabel: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentSecondary },
+    srValue: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+    priceMarker: { height: 28, justifyContent: 'center', alignItems: 'center', position: 'relative' },
+    priceLine: { position: 'absolute', left: 0, right: 0, top: '50%', height: 1, backgroundColor: colors.contentPositive },
+    pricePill: { backgroundColor: colors.contentPositive, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+    pricePillText: { fontFamily: F.medium, fontSize: 10, lineHeight: 12, letterSpacing: 0.5, color: '#FFFFFF' },
+    pivotMarker: { height: 28, justifyContent: 'center', alignItems: 'center' },
+    pivotPill: { backgroundColor: colors.backgroundSecondary, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+    pivotPillText: { fontFamily: F.medium, fontSize: 10, lineHeight: 12, letterSpacing: 0.5, color: colors.contentSecondary },
+
+    // tables
+    tableHead: { flexDirection: 'row', alignItems: 'center', paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.borderPrimary },
+    thLabel: { fontFamily: F.medium, fontSize: 10, lineHeight: 12, letterSpacing: 1, textTransform: 'uppercase', color: colors.contentTertiary },
+    tableRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 14 },
+    tColRight: { width: 80, textAlign: 'right' },
+    tCellLabel: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentSecondary },
+    tCellVal: { fontFamily: F.medium, fontSize: 14, lineHeight: 20 },
+
+    // delivery
+    delPills: { flexDirection: 'row', gap: 8 },
+    delEyebrow: { fontFamily: F.medium, fontSize: 10, lineHeight: 12, letterSpacing: 1, textTransform: 'uppercase', color: colors.contentTertiary, marginBottom: 12 },
+    delRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 },
+    delLegendLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    delDot: { width: 8, height: 8, borderRadius: 4 },
+    delLabel: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentSecondary },
+    delValue: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+    delPctLabel: { fontFamily: F.regular, fontSize: 14, lineHeight: 20, color: colors.contentPrimary },
+    delPctValue: { fontFamily: F.medium, fontSize: 16, lineHeight: 24, color: colors.contentPrimary },
+    delChart: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', height: DEL_CHART_H + 22, marginTop: 16 },
+    delGroup: { alignItems: 'center', gap: 8 },
+    delBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: DEL_CHART_H },
+    delBar: { width: 10, borderTopLeftRadius: 2, borderTopRightRadius: 2 },
+    delDayLabel: { fontFamily: F.regular, fontSize: 11, lineHeight: 14, color: colors.contentTertiary },
+    delDivider: { height: 1, backgroundColor: colors.borderPrimary, marginVertical: 16 },
+    delInsightsHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
+    delInsightsTitle: { fontFamily: F.medium, fontSize: 10, lineHeight: 12, letterSpacing: 1, textTransform: 'uppercase', color: colors.contentTertiary },
+    delInsightRow: { flexDirection: 'row', gap: 12, paddingVertical: 6 },
+    delInsightNum: { fontFamily: F.regular, fontSize: 13, lineHeight: 20, color: colors.contentTertiary, width: 12 },
+    delInsightText: { flex: 1, fontFamily: F.regular, fontSize: 13, lineHeight: 20, color: colors.contentSecondary },
+  });
+}
+
 const TABS = ['Overview', 'Technicals', 'News', 'Events'];
 const FILTER_PILLS = ['Quarterly', 'Yearly'];
 
@@ -1904,13 +2406,19 @@ const FILTER_PILLS = ['Quarterly', 'Yearly'];
 export default function StocksProductPage({
   onBack,
   stock = STOCK_CONFIGS.ZOMATO,
+  initialTab = 0,
+  primePick = null,
+  onBuy,
 }: {
   onBack?: () => void;
   stock?: StockConfig;
+  initialTab?: number;
+  primePick?: PrimePickDetail | null;
+  onBuy?: (o: { name: string; buy: string; stoploss: string; target?: string; market?: string }) => void;
 }) {
   const { mode } = useTheme();
   styles = makeStyles();
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [activePill, setActivePill] = useState(0);
   const [activeBarIndex, setActiveBarIndex] = useState(4);
   const [financialExpanded, setFinancialExpanded] = useState(true);
@@ -1918,9 +2426,21 @@ export default function StocksProductPage({
   const [liveMeta, setLiveMeta] = useState<ChartMeta | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const gr1 = useGR1Sheet();
+  const scrollRef = useRef<ScrollView>(null);
+  const [heroH, setHeroH] = useState(0);
+  const didInitialScroll = useRef(false);
+
+  // Arriving on the Technicals tab (from a Prime card) lands already scrolled so
+  // the sticky tab bar sits at the top and the hero is scrolled away.
+  useEffect(() => {
+    if (initialTab === 1 && heroH > 0 && !didInitialScroll.current) {
+      didInitialScroll.current = true;
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: heroH, animated: false }));
+    }
+  }, [initialTab, heroH]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeArea style={styles.safeArea}>
       <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} backgroundColor={colors.backgroundPrimary} />
 
       {/* Fixed header — status bar + app bar only */}
@@ -1936,6 +2456,7 @@ export default function StocksProductPage({
 
       {/* Scrollable body — index 1 (TabsBar) is sticky */}
       <ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1947,12 +2468,18 @@ export default function StocksProductPage({
         )}
       >
         {/* index 0: Hero section */}
-        <StockHeroSection stock={stock} onMetaUpdate={setLiveMeta} />
+        <View onLayout={(e) => setHeroH(e.nativeEvent.layout.height)}>
+          <StockHeroSection stock={stock} onMetaUpdate={setLiveMeta} />
+        </View>
 
         {/* index 1: Tabs — sticks to top on scroll */}
         <TabsBar tabs={TABS} activeTab={activeTab} onTabPress={setActiveTab} />
 
         {/* index 2+: Tab content */}
+        {activeTab === 1 ? (
+          <TechnicalsTab primePick={primePick} stockName={stock.shortName} liveMeta={liveMeta} onBuy={onBuy} />
+        ) : (
+        <>
         {/* GR-1 Insights */}
         <GR1InsightsCard
           scrollY={scrollY}
@@ -2033,6 +2560,8 @@ export default function StocksProductPage({
 
         {/* Top mutual fund invested */}
         <TopMutualFundsWidget />
+        </>
+        )}
 
         {/* Spacer for dock */}
         <View style={{ height: 80 }} />
@@ -2042,7 +2571,7 @@ export default function StocksProductPage({
       <BottomDock />
 
       <GR1Layer state={gr1} />
-    </SafeAreaView>
+    </SafeArea>
   );
 }
 

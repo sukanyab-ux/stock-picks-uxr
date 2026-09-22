@@ -1,7 +1,10 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, StatusBar, Image, Animated, Easing } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar, Image, Animated, Easing } from 'react-native';
+import Svg, { Path, Rect, Line } from 'react-native-svg';
 import { colors, fonts as F, useTheme } from './tokens';
+import SafeArea from './SafeArea';
+
+export type StockPicksVariant = 'v2' | 'v5';
 
 const ASSETS = {
   profilePic: require('./assets/profile-pic.png') as ReturnType<typeof require>,
@@ -11,6 +14,24 @@ function BackIcon() {
   return (
     <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
       <Path d="M15 6l-6 6 6 6" stroke={colors.contentPrimary} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 6l6 6-6 6" stroke={colors.contentTertiary} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function VariantCheckIcon() {
+  return (
+    <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
+      <Rect x={0} y={0} width={18} height={18} rx={4} fill={colors.contentPrimary} />
+      <Line x1={4.5} y1={9.5} x2={7.5} y2={12.5} stroke="#fff" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+      <Line x1={7.5} y1={12.5} x2={13.5} y2={6} stroke="#fff" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -171,13 +192,13 @@ function makeStyles() {
   });
 }
 
-export default function ProfilePage({ onBack }: { onBack: () => void }) {
+export default function ProfilePage({ onBack, onStockPicks, activeVariant }: { onBack: () => void; onStockPicks?: (v: StockPicksVariant) => void; activeVariant?: StockPicksVariant }) {
   const { mode, setMode } = useTheme();
   styles = makeStyles();
   const isDark = mode === 'dark';
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeArea style={styles.safeArea}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.backgroundPrimary} />
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
@@ -203,6 +224,25 @@ export default function ProfilePage({ onBack }: { onBack: () => void }) {
         </View>
         <Toggle value={isDark} onChange={(v) => setMode(v ? 'dark' : 'light')} />
       </View>
-    </SafeAreaView>
+
+      <Text style={styles.sectionLabel}>Stock Picks</Text>
+      {([
+        { variant: 'v2' as StockPicksVariant, label: 'V2', sub: 'Compact card with price range marker' },
+        { variant: 'v5' as StockPicksVariant, label: 'V5', sub: 'Swipeable cards with embedded chart' },
+      ] as const).map(({ variant, label, sub }, i) => (
+        <TouchableOpacity
+          key={variant}
+          style={[styles.row, i > 0 && { marginTop: -1 }]}
+          activeOpacity={0.7}
+          onPress={() => onStockPicks?.(variant)}
+        >
+          <View style={styles.rowText}>
+            <Text style={styles.rowTitle}>{label}</Text>
+            <Text style={styles.rowSubtitle}>{sub}</Text>
+          </View>
+          {variant === activeVariant && <VariantCheckIcon />}
+        </TouchableOpacity>
+      ))}
+    </SafeArea>
   );
 }
