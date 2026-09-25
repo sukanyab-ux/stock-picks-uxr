@@ -991,9 +991,6 @@ export default function PrimeListingPageV5({
           <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
             <HugeiconsIcon icon={ArrowLeft01Icon} size={24} color={colors.contentPrimary} strokeWidth={1.8} />
           </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text style={styles.pastPicksBtn}>Past picks</Text>
-          </TouchableOpacity>
         </View>
         <View style={styles.appBarContent}>
           <Text style={styles.appBarTitle}>Trade Picks by AI</Text>
