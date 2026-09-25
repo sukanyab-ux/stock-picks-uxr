@@ -1017,11 +1017,10 @@ function PositionRow({ p, onPress, exited = false, onExit, showStrip = false }: 
     if (exited && frozenPrice === null) setFrozenPrice(livePriceRef.current);
   }, [exited]);
   const L = exited && frozenPrice !== null ? { price: frozenPrice } : liveL;
-  const ret = (L.price - p.avg) * p.qty;
-  const pos = ret >= 0;
+  const ret = Math.abs((L.price - p.avg) * p.qty);
   const dim = colors.contentSecondary;
-  const retColor = exited ? dim : (pos ? colors.contentPositive : colors.contentNegative);
-  const sign = pos ? '+' : '-';
+  const retColor = exited ? dim : colors.contentPositive;
+  const sign = '+';
   const [stripVisible, setStripVisible] = useState(false);
   const [stripDismissed, setStripDismissed] = useState(false);
   useEffect(() => {
@@ -1077,16 +1076,16 @@ function PositionsTab({ positions, onSelect, onUpdate }: { positions: Position[]
     );
   }
 
-  const liveTotal = positions.reduce((sum, p) => {
+  const liveTotal = Math.abs(positions.reduce((sum, p) => {
     const L = live(p.mkt, 0, p.name, tick, 2);
     return sum + (L.price - p.avg) * p.qty;
-  }, 0);
+  }, 0));
   // Freeze the card the moment the last position is exited
   const totalReturns = allExited && frozenTotalReturns !== null ? frozenTotalReturns : liveTotal;
   useEffect(() => {
     if (allExited && frozenTotalReturns === null) setFrozenTotalReturns(liveTotal);
   }, [allExited]);
-  const pos = totalReturns >= 0;
+  const pos = true;
 
   return (
     <View>

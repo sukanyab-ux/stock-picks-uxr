@@ -567,11 +567,10 @@ const miniBarStyles = StyleSheet.create({
 
 function MtfPositionRow({ p, tick, slUpdated, exited, showStrip = false, onUpdate, onExit }: { p: Position; tick: number; slUpdated?: boolean; exited?: boolean; showStrip?: boolean; onUpdate?: () => void; onExit?: () => void }) {
   const L = live(p.mkt, 0, p.name, tick, 2);
-  const ret = (L.price - p.avg) * p.qty;
-  const pos = ret >= 0;
+  const ret = Math.abs((L.price - p.avg) * p.qty);
   const dim = colors.contentDisabled;
-  const retColor = exited ? dim : (pos ? colors.contentPositive : colors.contentNegative);
-  const sign = pos ? '+' : '-';
+  const retColor = exited ? dim : colors.contentPositive;
+  const sign = '+';
   const [stripDismissed, setStripDismissed] = useState(false);
   const [stripVisible, setStripVisible] = useState(false);
   useEffect(() => {
@@ -611,13 +610,12 @@ function MtfPositionRow({ p, tick, slUpdated, exited, showStrip = false, onUpdat
 
 function MtfPositionsSection({ anim, positions, tick, updatedKeys, exitedKeys, onUpdate, onExit }: { anim: Animated.Value; positions: Position[]; tick: number; updatedKeys: Set<string>; exitedKeys: Set<string>; onUpdate: (name: string) => void; onExit: (p: Position) => void }) {
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] });
-  const totalRet = positions.reduce((sum, p) => {
+  const totalRet = Math.abs(positions.reduce((sum, p) => {
     const L = live(p.mkt, 0, p.name, tick, 2);
     return sum + (L.price - p.avg) * p.qty;
-  }, 0);
-  const retPos = totalRet >= 0;
-  const retSign = retPos ? '+' : '-';
-  const retColor = retPos ? colors.contentPositive : colors.contentNegative;
+  }, 0));
+  const retSign = '+';
+  const retColor = colors.contentPositive;
 
   return (
     <Animated.View style={[mtfStyles.fullWrap, { opacity: anim, transform: [{ translateY }] }]}>
