@@ -610,10 +610,10 @@ function MtfPositionRow({ p, tick, slUpdated, exited, showStrip = false, onUpdat
 
 function MtfPositionsSection({ anim, positions, tick, updatedKeys, exitedKeys, onUpdate, onExit }: { anim: Animated.Value; positions: Position[]; tick: number; updatedKeys: Set<string>; exitedKeys: Set<string>; onUpdate: (name: string) => void; onExit: (p: Position) => void }) {
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] });
-  const totalRet = Math.min(11000, Math.max(4000, Math.abs(positions.reduce((sum, p) => {
+  const totalRet = Math.abs(positions.reduce((sum, p) => {
     const L = live(p.mkt, 0, p.name, tick, 2);
     return sum + (L.price - p.avg) * p.qty;
-  }, 0))));
+  }, 0));
   const retSign = '+';
   const retColor = colors.contentPositive;
 
@@ -817,7 +817,7 @@ export default function PrimeListingPageV5({
   }, []);
 
   const [activeIdx, setActiveIdx] = useState(0);
-  const [qtys, setQtys] = useState<number[]>(CALLS.map(() => 20));
+  const [qtys, setQtys] = useState<number[]>(CALLS.map(() => 40));
   const [positions, setPositions] = useState<Position[]>([]);
   const [updatedKeys, setUpdatedKeys] = useState<Set<string>>(new Set());
   const [exitToast, setExitToast] = useState<{ name: string; qty: number } | null>(null);
@@ -915,7 +915,7 @@ export default function PrimeListingPageV5({
           return { ...p, qty: newQty, avg: newAvg, mkt: call.price, prime: true };
         });
       }
-      return [{ name: call.name, type: 'MTF', qty: addQty, avg: call.price, mkt: call.price, prime: true }, ...prev];
+      return [{ name: call.name, type: 'MTF', qty: addQty, avg: call.stoploss, mkt: call.price, prime: true }, ...prev];
     });
 
     if (isFirst) {

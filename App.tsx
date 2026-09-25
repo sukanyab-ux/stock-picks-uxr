@@ -143,7 +143,7 @@ function AppContent() {
           setPositions((prev) => {
             const already = prev.some((p) => p.name === 'Ambuja Cements');
             if (already) return prev;
-            return [{ name: 'Ambuja Cements', type: 'MTF', qty: 100, avg: 438, mkt: 438, slLabel: '415', tgtLabel: '478', prime: true }, ...prev];
+            return [{ name: 'Ambuja Cements', type: 'MTF', qty: 200, avg: 400, mkt: 438, slLabel: '415', tgtLabel: '478', prime: true }, ...prev];
           });
           setHomeInitialTab(2);
           setScreen('home');
