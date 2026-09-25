@@ -576,7 +576,7 @@ function MtfPositionRow({ p, tick, slUpdated, exited, showStrip = false, onUpdat
   const [stripVisible, setStripVisible] = useState(false);
   useEffect(() => {
     if (!showStrip) return;
-    const t = setTimeout(() => setStripVisible(true), 2000);
+    const t = setTimeout(() => setStripVisible(true), 4000);
     return () => clearTimeout(t);
   }, [showStrip]);
   return (
