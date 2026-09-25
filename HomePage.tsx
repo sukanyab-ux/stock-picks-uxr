@@ -944,6 +944,41 @@ function SnackbarSL({ name, qty, onDone }: { name: string; qty: number; onDone: 
   );
 }
 
+function SellToast({ name, qty }: { name: string; qty: number }) {
+  return (
+    <View style={sellToastStyles.wrap} pointerEvents="none">
+      <View style={sellToastStyles.container}>
+        <View style={sellToastStyles.iconCircle}>
+          <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
+            <Path d="M3.5 8.5l3 3 6-7" stroke="#FFFFFF" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </View>
+        <View style={sellToastStyles.textWrap}>
+          <Text style={sellToastStyles.title}>Sell order executed</Text>
+          <Text style={sellToastStyles.sub} numberOfLines={1}>{name}{'  ·  '}{qty} qty</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const sellToastStyles = StyleSheet.create({
+  wrap: { position: 'absolute', bottom: 72, left: 0, right: 0, paddingHorizontal: 8 },
+  container: {
+    backgroundColor: '#353839', borderRadius: 12,
+    flexDirection: 'row', alignItems: 'center', minHeight: 48, paddingRight: 16,
+  },
+  iconCircle: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: colors.backgroundPositive,
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 16, marginRight: 12, marginVertical: 8,
+  },
+  textWrap: { flex: 1, paddingVertical: 12 },
+  title: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: '#FFFFFF' },
+  sub: { fontFamily: F.regular, fontSize: 12, lineHeight: 18, color: '#C7C8CE' },
+});
+
 function PickUpdateStrip({ onExit, onDismiss }: { onExit?: () => void; onDismiss?: () => void }) {
   const lineW = SW - 32;
   return (
@@ -1062,7 +1097,7 @@ function PositionRow({ p, onPress, exited = false, onExit, showStrip = false }: 
   );
 }
 
-function PositionsTab({ positions, onSelect, onUpdate }: { positions: Position[]; onSelect?: (p: Position) => void; onUpdate?: (p: Position) => void }) {
+function PositionsTab({ positions, onSelect, onUpdate, onExitToast }: { positions: Position[]; onSelect?: (p: Position) => void; onUpdate?: (p: Position) => void; onExitToast?: (name: string, qty: number) => void }) {
   const tick = useLiveTick();
   const [exitedKeys, setExitedKeys] = useState<Set<string>>(new Set());
   const [frozenTotalReturns, setFrozenTotalReturns] = useState<number | null>(null);
@@ -1117,7 +1152,7 @@ function PositionsTab({ positions, onSelect, onUpdate }: { positions: Position[]
           p={p}
           onPress={() => onSelect?.(p)}
           exited={exitedKeys.has(p.name)}
-          onExit={() => setExitedKeys((prev) => new Set(prev).add(p.name))}
+          onExit={() => { setExitedKeys((prev) => new Set(prev).add(p.name)); onExitToast?.(p.name, p.qty); }}
           showStrip={i >= positions.length - 2}
         />
       ))}
@@ -1904,6 +1939,13 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNa
   const gr1 = useGR1Sheet();
   // Tapped position → detail bottom sheet (null = closed).
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
+  const [stripExitToast, setStripExitToast] = useState<{ name: string; qty: number } | null>(null);
+  const stripExitToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleStripExit = (name: string, qty: number) => {
+    if (stripExitToastTimer.current) clearTimeout(stripExitToastTimer.current);
+    setStripExitToast({ name, qty });
+    stripExitToastTimer.current = setTimeout(() => setStripExitToast(null), 3000);
+  };
   // Names of positions whose SL has been updated from the sheet — their list row
   // reverts to the gem-only state (no "Update" pill).
   const [updatedPositions, setUpdatedPositions] = useState<Set<string>>(new Set());
@@ -2091,7 +2133,7 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNa
         {activeNav === 2 ? (
           <View style={{ height: 16 }} />
         ) : activeTab === 2 ? (
-          <PositionsTab positions={positions ?? []} onSelect={Platform.OS !== 'web' && onNativePositionPress ? onNativePositionPress : setSelectedPosition} />
+          <PositionsTab positions={positions ?? []} onSelect={Platform.OS !== 'web' && onNativePositionPress ? onNativePositionPress : setSelectedPosition} onExitToast={handleStripExit} />
         ) : (
           <>
             {/* Recently viewed */}
@@ -2141,6 +2183,7 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNa
       </ScrollView>
 
       <BottomNav activeNav={activeNav} onNavPress={setActiveNav} />
+      {stripExitToast && <SellToast name={stripExitToast.name} qty={stripExitToast.qty} />}
 
     </SafeArea>
 
