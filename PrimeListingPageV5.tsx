@@ -1094,7 +1094,7 @@ export default function PrimeListingPageV5({
                     key={call.ticker}
                     style={[styles.pill, isActive && panelSnap === 'mid' && styles.pillActive]}
                     activeOpacity={0.7}
-                    onPress={() => setActiveIdx(i)}
+                    onPress={() => { setActiveIdx(i); if (panelSnap === 'collapsed') snapPanel('mid'); }}
                   >
                     <StockLogo ticker={call.logoTicker ?? call.ticker} size={32} borderRadius={8} />
                     <View style={styles.pillTextGroup}>
