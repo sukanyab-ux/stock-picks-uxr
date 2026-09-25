@@ -245,9 +245,20 @@ export default function App() {
 
 function WebShell() {
   useTheme();
+  const { width: vw, height: vh } = Dimensions.get('window');
+  const isMobileViewport = vw <= 430;
+  const frameWidth  = isMobileViewport ? vw  : 360;
+  const frameHeight = isMobileViewport ? vh  : Math.min(vh, 800);
   return (
-    <View style={[styles.webShell, { backgroundColor: colors.backgroundTertiary }]}>
-      <View style={[styles.deviceFrame, { backgroundColor: colors.backgroundPrimary }]}>
+    <View style={[
+      styles.webShell,
+      { backgroundColor: colors.backgroundTertiary },
+      isMobileViewport && { justifyContent: 'flex-start' },
+    ]}>
+      <View style={[
+        styles.deviceFrame,
+        { backgroundColor: colors.backgroundPrimary, width: frameWidth, height: frameHeight },
+      ]}>
         <AppContent />
       </View>
     </View>
@@ -261,8 +272,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   deviceFrame: {
-    width: 360,
-    height: 800,
     overflow: 'hidden',
   },
 });
