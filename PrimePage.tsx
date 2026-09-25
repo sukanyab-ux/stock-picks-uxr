@@ -390,7 +390,7 @@ export default function PrimePage({ onClose, onActivate }: { onClose: () => void
             <Text style={styles.tncText}>
               {'By continuing, you accept '}
               <Text style={styles.tncLink}>Groww's T&C.</Text>
-              {' Money will be auto-debited weekly. You can stop this anytime from Settings'}
+              {selectedPlan === 'week' ? ' Money will be auto-debited daily. You can stop this anytime from Settings' : ' Money will be auto-debited monthly. You can stop this anytime from Settings'}
             </Text>
           </View>
         </View>
