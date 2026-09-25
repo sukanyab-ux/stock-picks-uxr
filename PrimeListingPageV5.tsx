@@ -610,10 +610,10 @@ function MtfPositionRow({ p, tick, slUpdated, exited, showStrip = false, onUpdat
 
 function MtfPositionsSection({ anim, positions, tick, updatedKeys, exitedKeys, onUpdate, onExit }: { anim: Animated.Value; positions: Position[]; tick: number; updatedKeys: Set<string>; exitedKeys: Set<string>; onUpdate: (name: string) => void; onExit: (p: Position) => void }) {
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [-16, 0] });
-  const totalRet = Math.abs(positions.reduce((sum, p) => {
+  const totalRet = Math.min(11000, Math.max(4000, Math.abs(positions.reduce((sum, p) => {
     const L = live(p.mkt, 0, p.name, tick, 2);
     return sum + (L.price - p.avg) * p.qty;
-  }, 0));
+  }, 0))));
   const retSign = '+';
   const retColor = colors.contentPositive;
 

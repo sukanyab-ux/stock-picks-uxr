@@ -1111,10 +1111,10 @@ function PositionsTab({ positions, onSelect, onUpdate, onExitToast }: { position
     );
   }
 
-  const liveTotal = Math.abs(positions.reduce((sum, p) => {
+  const liveTotal = Math.min(11000, Math.max(4000, Math.abs(positions.reduce((sum, p) => {
     const L = live(p.mkt, 0, p.name, tick, 2);
     return sum + (L.price - p.avg) * p.qty;
-  }, 0));
+  }, 0))));
   // Freeze the card the moment the last position is exited
   const totalReturns = allExited && frozenTotalReturns !== null ? frozenTotalReturns : liveTotal;
   useEffect(() => {
