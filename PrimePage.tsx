@@ -286,7 +286,7 @@ export default function PrimePage({ onClose, onActivate }: { onClose: () => void
     };
   };
 
-  const subscribeLabel = selectedPlan === 'week' ? 'Subscribe for ₹199 per week' : 'Subscribe for ₹799 per month';
+  const subscribeLabel = selectedPlan === 'week' ? 'Subscribe for ₹20 per day' : 'Subscribe for ₹349 per month';
 
   return (
     <SafeArea style={styles.safeArea}>
@@ -366,12 +366,12 @@ export default function PrimePage({ onClose, onActivate }: { onClose: () => void
         {/* Plan tiles */}
         <View style={styles.planRow}>
           <PlanTile
-            plan="week" price="₹199" period="/week"
+            plan="week" price="₹20" period="/day"
             selected={selectedPlan === 'week'}
             onSelect={() => setSelectedPlan('week')}
           />
           <PlanTile
-            plan="month" price="₹799" period="/month" tag="10% off"
+            plan="month" price="₹349" period="/month" tag="10% off"
             selected={selectedPlan === 'month'}
             onSelect={() => setSelectedPlan('month')}
           />
