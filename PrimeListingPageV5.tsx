@@ -334,7 +334,7 @@ function PrimeSlToast({ updateSl, onUpdate, onDismiss }: { updateSl: string; onU
         Animated.timing(opacity, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
         Animated.timing(translateY, { toValue: 0, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
       ]).start();
-    }, 1000);
+    }, 4000);
     return () => clearTimeout(id);
   }, []);
 

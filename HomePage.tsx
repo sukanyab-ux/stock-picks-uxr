@@ -1146,7 +1146,11 @@ export function PositionDetailSheet({ position, onClose, onUpdate }: { position:
   // suggested stop (slUpdated swaps the value in the row above) and shows the
   // transient 'done' confirmation, which then smoothly collapses to 'hidden'.
   const [slUpdated, setSlUpdated] = useState(false);
-  const [toastPhase, setToastPhase] = useState<'prompt' | 'done' | 'hidden'>('prompt');
+  const [toastPhase, setToastPhase] = useState<'prompt' | 'done' | 'hidden'>('hidden');
+  useEffect(() => {
+    const t = setTimeout(() => setToastPhase('prompt'), 4000);
+    return () => clearTimeout(t);
+  }, []);
   // Drives the toast collapse: 1 = fully shown, 0 = collapsed (height + opacity).
   const toastCollapse = useRef(new Animated.Value(1)).current;
   const [toastH, setToastH] = useState(0);
