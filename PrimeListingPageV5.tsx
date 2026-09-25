@@ -928,6 +928,7 @@ export default function PrimeListingPageV5({
         useNativeDriver: false,
       }).start();
     }
+    snapPanel('collapsed');
   };
 
   const commitField = (field: FocusedField, value: string, idx: number) => {
