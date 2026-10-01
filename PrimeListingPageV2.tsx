@@ -65,7 +65,7 @@ export type FetchedPriceMap = Record<string, { price: number; pct: number }>;
 export const CALLS: V2Call[] = [
   {
     ticker: 'ETERNAL', symbol: 'ETERNAL.NS', name: 'ETERNAL',
-    basePrice: 315, basePct: 1.5, sincePosted: 2.1, horizon: '1D', sl: 295, target: 348,
+    basePrice: 314, basePct: 1.5, sincePosted: 2.1, horizon: '1D', sl: 295, target: 348,
     analysis: 'Bullish pattern breakout on weekly chart, RSI (14) hovering near 60 mark…',
     analysisParas: [
       { bold: 'Bullish pattern breakout', rest: ' on weekly chart' },
@@ -397,6 +397,7 @@ export default function PrimeListingPageV2({ onBack, onCardPress, onBuy, onWinRa
                 buy: `${inr(c.sl, 0)} - ${inr(c.target, 0)}`,
                 stoploss: inr(c.sl, 0),
                 target: inr(c.target, 0),
+                market: `₹${fp ? fp.price : c.basePrice}`,
               })}
               onPositionsPress={c.positionTag ? onPositionsPress : undefined}
             />;

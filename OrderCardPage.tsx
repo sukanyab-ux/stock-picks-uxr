@@ -60,7 +60,7 @@ function pctFromMarket(value: string, marketPrice: number | null): string | null
   const v = toNum(value);
   if (v === null || marketPrice === null || marketPrice === 0) return null;
   const pct = ((v - marketPrice) / marketPrice) * 100;
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% from market`;
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% from market`;
 }
 
 function BackspaceIcon({ size = 24 }: { size?: number }) {
