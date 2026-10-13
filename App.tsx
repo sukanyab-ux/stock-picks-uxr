@@ -190,6 +190,7 @@ function AppContent() {
         }}
         onBuy={openOrder}
         primeActivated={primeActivated}
+        picksVariant={activePicksVariant}
         positions={positions}
         initialTab={homeInitialTab}
         onInitialTabConsumed={() => setHomeInitialTab(null)}

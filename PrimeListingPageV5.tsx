@@ -26,6 +26,16 @@ import { live, inr } from './live';
 import { Position } from './positions';
 
 const COLLAPSED_H = 160; // drag handle + title + pill strip
+
+const QTY_PRESETS = [1000, 2000, 3000];
+const QTY_TIP_BG = '#1E2224';
+// Figma asset (assets/qty-tooltip-arrow.svg), verbatim.
+const QTY_TIP_ARROW_SVG = `<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="6" height="4.52817" viewBox="0 0 6 4.52817" fill="none" xmlns="http://www.w3.org/2000/svg">
+<foreignObject x="0" y="0" width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="backdrop-filter:blur(2px);clip-path:url(#bgblur_0_0_16_clip_path);height:100%;width:100%"></div></foreignObject><path id="Polygon 1" data-figma-bg-blur-radius="4" d="M2.57125 0.242752C2.76545 -0.0809171 3.23454 -0.0809177 3.42875 0.242752L6 4.52817H0L2.57125 0.242752Z" fill="#1E2224"/>
+<defs>
+<clipPath id="bgblur_0_0_16_clip_path" transform="translate(0 0)"><path d="M2.57125 0.242752C2.76545 -0.0809171 3.23454 -0.0809177 3.42875 0.242752L6 4.52817H0L2.57125 0.242752Z"/>
+</clipPath></defs>
+</svg>`;
 const MID_H = 400;
 
 const DSL = (ticker: string) =>
@@ -806,9 +816,13 @@ const numpadStyles = StyleSheet.create({
 export default function PrimeListingPageV5({
   onBack,
   onBuy,
+  embedded = false,
+  onPanelExpandedChange,
 }: {
-  onBack: () => void;
+  onBack?: () => void;
   onBuy?: (o: { name: string; buy: string; stoploss: string; target?: string; market?: string }) => void;
+  embedded?: boolean;
+  onPanelExpandedChange?: (expanded: boolean) => void;
 }) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -817,7 +831,7 @@ export default function PrimeListingPageV5({
   }, []);
 
   const [activeIdx, setActiveIdx] = useState(0);
-  const [qtys, setQtys] = useState<number[]>(CALLS.map(() => 40));
+  const [qtys, setQtys] = useState<(number | null)[]>(CALLS.map(() => null));
   const [positions, setPositions] = useState<Position[]>([]);
   const [updatedKeys, setUpdatedKeys] = useState<Set<string>>(new Set());
   const [exitToast, setExitToast] = useState<{ name: string; qty: number } | null>(null);
@@ -837,7 +851,7 @@ export default function PrimeListingPageV5({
   type FocusedField = 'qty' | 'sl' | 'tgt';
   const [focusedField, setFocusedField] = useState<FocusedField>('qty');
   const [slTgtMode, setSlTgtMode] = useState(false);
-  const [productType, setProductType] = useState<'MTF' | 'Intraday'>('MTF');
+  const productTypeFor = (i: number): 'MTF' | 'Intraday' => (i % 2 === 1 ? 'Intraday' : 'MTF');
   const [slValue, setSlValue] = useState('');
   const [tgtValue, setTgtValue] = useState('');
 
@@ -849,15 +863,42 @@ export default function PrimeListingPageV5({
   const panelTransY = useRef(new Animated.Value(0)).current;
   const panelContentHRef = useRef(0); // measured via onLayout
 
+  // Embedded mode: the panel is a floating card that animates its height
+  // between full content and the dock (handle + pill strip), so the rounded
+  // bottom edge stays visible in both states. Height can't use the native driver.
+  const dockHRef = useRef(COLLAPSED_H);
+  const fullHAnim = useRef(new Animated.Value(0)).current;
+  const maxYAnim = useRef(new Animated.Value(1)).current;
+  const [cardMeasured, setCardMeasured] = useState(false);
+  const draggingRef = useRef(false);
+  const collapsedH = () => (embedded ? dockHRef.current : COLLAPSED_H);
+  const syncCardAnims = () => {
+    fullHAnim.setValue(panelContentHRef.current);
+    maxYAnim.setValue(Math.max(1, panelContentHRef.current - dockHRef.current));
+  };
+  const collapseProgress = Animated.divide(panelTransY, maxYAnim).interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+  const cardHeight = Animated.subtract(fullHAnim, Animated.multiply(collapseProgress, maxYAnim));
+  const titleHeight = collapseProgress.interpolate({ inputRange: [0, 1], outputRange: [28, 0] });
+  const titleOpacity = collapseProgress.interpolate({ inputRange: [0, 0.5], outputRange: [1, 0], extrapolate: 'clamp' });
+
+  useEffect(() => {
+    onPanelExpandedChange?.(panelSnap === 'mid');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelSnap]);
+
   const snapPanel = (target: PanelSnap) => {
     setPanelSnap(target);
-    const toY = target === 'mid' ? 0 : Math.max(0, panelContentHRef.current - COLLAPSED_H);
+    const toY = target === 'mid' ? 0 : Math.max(0, panelContentHRef.current - collapsedH());
     Animated.spring(panelTransY, {
       toValue: toY,
       damping: 32,
       stiffness: 260,
       mass: 1,
-      useNativeDriver: true,
+      useNativeDriver: !embedded,
     }).start();
   };
 
@@ -866,15 +907,17 @@ export default function PrimeListingPageV5({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
+        draggingRef.current = true;
         panelTransY.extractOffset();
       },
       onPanResponderMove: (_, gs) => {
         panelTransY.setValue(gs.dy);
       },
       onPanResponderRelease: (_, gs) => {
+        draggingRef.current = false;
         panelTransY.flattenOffset();
         const current = (panelTransY as any)._value;
-        const maxY = Math.max(0, panelContentHRef.current - COLLAPSED_H);
+        const maxY = Math.max(0, panelContentHRef.current - collapsedH());
         if (current <= 0) { snapPanel('mid'); return; }
         if (current >= maxY) { snapPanel('collapsed'); return; }
         if (gs.vy > 0.4 || current > maxY * 0.4) {
@@ -898,13 +941,14 @@ export default function PrimeListingPageV5({
   }, []);
 
   const handleBuy = (i: number) => {
+    const addQty = (numpadOpen && focusedField === 'qty') ? (parseInt(numpadValue, 10) || qtys[i]) : qtys[i];
+    if (!addQty) return;
     if (numpadOpen) {
       commitField(focusedField, numpadValue, i);
       setNumpadOpen(false);
     }
     const isFirst = positions.length === 0;
     const call = CALLS[i];
-    const addQty = (numpadOpen && focusedField === 'qty') ? (parseInt(numpadValue, 10) || qtys[i]) : qtys[i];
     setPositions((prev) => {
       const existing = prev.findIndex((p) => p.name === call.name);
       if (existing >= 0) {
@@ -915,7 +959,7 @@ export default function PrimeListingPageV5({
           return { ...p, qty: newQty, avg: newAvg, mkt: call.price, prime: true };
         });
       }
-      return [{ name: call.name, type: 'MTF', qty: addQty, avg: call.stoploss, mkt: call.price, prime: true }, ...prev];
+      return [{ name: call.name, type: productTypeFor(i), qty: addQty, avg: call.stoploss, mkt: call.price, prime: true }, ...prev];
     });
 
     if (isFirst) {
@@ -945,7 +989,7 @@ export default function PrimeListingPageV5({
   const switchField = (field: FocusedField) => {
     commitField(focusedField, numpadValue, activeIdx);
     const call = CALLS[activeIdx];
-    if (field === 'qty') setNumpadValue(String(qtys[activeIdx]));
+    if (field === 'qty') setNumpadValue(qtys[activeIdx] != null ? String(qtys[activeIdx]) : '');
     else if (field === 'sl') setNumpadValue(slValue || String(Math.round(call.stoploss)));
     else setNumpadValue(tgtValue || String(Math.round(call.target)));
     setFocusedField(field);
@@ -953,7 +997,7 @@ export default function PrimeListingPageV5({
 
   const openFocusMode = (field: FocusedField) => {
     const call = CALLS[activeIdx];
-    if (field === 'qty') setNumpadValue(String(qtys[activeIdx]));
+    if (field === 'qty') setNumpadValue(qtys[activeIdx] != null ? String(qtys[activeIdx]) : '');
     else if (field === 'sl') setNumpadValue(slValue || String(Math.round(call.stoploss)));
     else setNumpadValue(tgtValue || String(Math.round(call.target)));
     setFocusedField(field);
@@ -971,12 +1015,22 @@ export default function PrimeListingPageV5({
     setSlTgtMode(false);
   };
 
+  const qtyFocused = numpadOpen && focusedField === 'qty';
+  const qtyText = qtyFocused ? numpadValue : (qtys[activeIdx] != null ? String(qtys[activeIdx]) : '');
+  const showQtyTip = !slTgtMode && qtyText === '';
+  const pickQty = (q: number) => {
+    if (qtyFocused) { setNumpadValue(String(q)); return; }
+    setQtys((prev) => prev.map((v, idx) => (idx === activeIdx ? q : v)));
+  };
+
   const activeCall = CALLS[activeIdx];
   const L = live(activeCall.price, activeCall.changePct, activeCall.ticker, tick, 0.3);
   const pricePos = L.pct >= 0;
 
+  const Wrapper = embedded ? View : SafeArea;
+
   return (
-    <SafeArea style={styles.safeArea}>
+    <Wrapper style={styles.safeArea}>
       <Animated.View
         style={[
           styles.container,
@@ -986,24 +1040,28 @@ export default function PrimeListingPageV5({
           },
         ]}
       >
-        {/* ── Prominent app bar ── */}
-        <View style={styles.appBarTop}>
-          <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
-            <HugeiconsIcon icon={ArrowLeft01Icon} size={24} color={colors.contentPrimary} strokeWidth={1.8} />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.appBarContent}>
-          <Text style={styles.appBarTitle}>Trade Picks by AI</Text>
-          <Text style={styles.appBarSubtitle}>
-            <Text style={styles.appBarSubtitleRegular}>Your win rate is </Text>
-            <Text style={styles.appBarSubtitleBold}>68%</Text>
-          </Text>
-        </View>
+        {!embedded && (
+          <>
+            {/* ── Prominent app bar ── */}
+            <View style={styles.appBarTop}>
+              <TouchableOpacity style={styles.backBtn} onPress={onBack} activeOpacity={0.7}>
+                <HugeiconsIcon icon={ArrowLeft01Icon} size={24} color={colors.contentPrimary} strokeWidth={1.8} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.appBarContent}>
+              <Text style={styles.appBarTitle}>Trade Picks by AI</Text>
+              <Text style={styles.appBarSubtitle}>
+                <Text style={styles.appBarSubtitleRegular}>Your win rate is </Text>
+                <Text style={styles.appBarSubtitleBold}>68%</Text>
+              </Text>
+            </View>
+          </>
+        )}
 
         {/* ── Positions + panel in a clipping container ── */}
         <View style={styles.panelContainer}>
           {/* Scrollable positions area — paddingBottom reserves space for collapsed header */}
-          <ScrollView style={styles.positionsArea} contentContainerStyle={{ paddingBottom: COLLAPSED_H }}>
+          <ScrollView style={styles.positionsArea} contentContainerStyle={{ paddingTop: embedded ? 24 : 0, paddingBottom: COLLAPSED_H }}>
             {positions.length > 0 ? (
               <MtfPositionsSection
                 anim={mtfAnim}
@@ -1050,18 +1108,37 @@ export default function PrimeListingPageV5({
 
         {/* ── Picks dock panel — absolutely pinned to bottom, slides via translateY ── */}
         <Animated.View
-          style={[styles.panel, { transform: [{ translateY: panelTransY }] }]}
-          onLayout={(e) => { panelContentHRef.current = e.nativeEvent.layout.height; }}
+          style={
+            embedded
+              ? [styles.panel, styles.panelFloating, cardMeasured && { height: cardHeight }]
+              : [styles.panel, { transform: [{ translateY: panelTransY }] }]
+          }
+          onLayout={embedded ? undefined : (e) => { panelContentHRef.current = e.nativeEvent.layout.height; }}
         >
+          <View
+            onLayout={embedded ? (e) => {
+              if (panelSnap !== 'mid' || draggingRef.current) return;
+              if (Math.abs((panelTransY as any)._value) > 0.5) return;
+              // +2 for the card's top/bottom border
+              panelContentHRef.current = e.nativeEvent.layout.height + 2;
+              syncCardAnims();
+              if (!cardMeasured) setCardMeasured(true);
+            } : undefined}
+          >
             {/* Zone 0 — drag handle + title (always visible, drag surface) */}
             <View style={styles.panelTopBar} {...panResponder.panHandlers}>
               <View style={styles.dragHandle} />
-              <View style={styles.panelTitleRow}>
+              <Animated.View
+                style={[
+                  styles.panelTitleRow,
+                  embedded && { height: titleHeight, opacity: titleOpacity, overflow: 'hidden' },
+                ]}
+              >
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => { if (panelSnap === 'collapsed') snapPanel('mid'); }}
                 >
-                  <Text style={styles.panelTitle}>Live picks ({CALLS.length})</Text>
+                  <Text style={styles.panelTitle}>Live trade picks ({CALLS.length})</Text>
                 </TouchableOpacity>
                 {numpadOpen && (
                   <TouchableOpacity activeOpacity={0.7} onPress={() => setRailOpen(v => !v)}>
@@ -1074,7 +1151,7 @@ export default function PrimeListingPageV5({
                     />
                   </TouchableOpacity>
                 )}
-              </View>
+              </Animated.View>
             </View>
 
             {/* Zone 1 — pick icon strip (hidden in focus mode unless rail toggled open) */}
@@ -1082,23 +1159,38 @@ export default function PrimeListingPageV5({
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              style={styles.pillStripWrap}
               contentContainerStyle={styles.pillStrip}
+              onLayout={embedded ? (e) => {
+                // dock = top bar without title (8 + 4 handle + 10 + 8) + strip + 2 border
+                dockHRef.current = 30 + e.nativeEvent.layout.height + 2;
+                if (panelContentHRef.current) syncCardAnims();
+              } : undefined}
             >
               {CALLS.map((call, i) => {
-                const isActive = i === activeIdx;
+                const isActive = i === activeIdx && panelSnap === 'mid';
                 return (
                   <TouchableOpacity
                     key={call.ticker}
-                    style={[styles.pill, isActive && panelSnap === 'mid' && styles.pillActive]}
+                    style={styles.pill}
                     activeOpacity={0.7}
                     onPress={() => { setActiveIdx(i); if (panelSnap === 'collapsed') snapPanel('mid'); }}
                   >
-                    <StockLogo ticker={call.logoTicker ?? call.ticker} size={32} borderRadius={8} />
+                    <View style={[styles.pillLogoFrame, isActive && styles.pillLogoFrameActive]}>
+                      <StockLogo ticker={call.logoTicker ?? call.ticker} size={32} borderRadius={8} />
+                    </View>
                     <View style={styles.pillTextGroup}>
-                      <Text style={[styles.pillTicker, isActive && styles.pillTickerActive]}>
+                      <Text style={[styles.pillTicker, isActive && styles.pillTickerActive]} numberOfLines={1}>
                         {call.ticker}
                       </Text>
-                      <Text style={[styles.pillUpside, isActive && styles.pillUpsideActive]}>{call.upside}</Text>
+                      <View style={styles.pillUpsideRow}>
+                        <Text style={styles.pillUpside}>{call.upside}</Text>
+                        {productTypeFor(i) === 'Intraday' && (
+                          <View style={styles.pillTag}>
+                            <Text style={styles.pillTagText}>1D</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </TouchableOpacity>
                 );
@@ -1114,30 +1206,28 @@ export default function PrimeListingPageV5({
                     <TouchableOpacity activeOpacity={0.7}>
                       <Text style={styles.orderCardName}>{activeCall.name}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      activeOpacity={0.7}
-                      onPress={() => setProductType(t => t === 'MTF' ? 'Intraday' : 'MTF')}
-                      style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 2 }}
-                    >
-                      <Text style={styles.orderCardNameSuffix}> · {productType}</Text>
-                      <Svg width={12} height={12} viewBox="0 0 12 12" fill="none" style={{ marginLeft: 4 }}>
-                        <Path d="M8.74606 7.72364C8.89869 7.58368 9.1358 7.59394 9.27572 7.74659C9.41565 7.89925 9.4054 8.13641 9.25278 8.27637L6.25331 11.0265C6.10996 11.1579 5.8899 11.1579 5.74655 11.0265L2.74707 8.27637C2.59447 8.13641 2.58421 7.89925 2.72412 7.74659C2.86405 7.59394 3.10119 7.58368 3.25382 7.72364L5.99993 10.2413L8.74606 7.72364ZM5.74655 0.973327C5.8899 0.841899 6.10996 0.841899 6.25331 0.973327L9.25278 3.72345C9.40535 3.86341 9.41565 4.10061 9.27572 4.25326C9.1358 4.40585 8.89864 4.41613 8.74606 4.2762L5.99993 1.75852L3.25382 4.2762C3.1012 4.41613 2.86405 4.40585 2.72412 4.25326C2.58422 4.1006 2.59449 3.86341 2.74707 3.72345L5.74655 0.973327Z" fill="#7F8283" />
-                      </Svg>
-                    </TouchableOpacity>
+                    <Text style={styles.orderCardNameSuffix}>•</Text>
+                    <Text style={styles.orderCardNameSuffix}>{productTypeFor(activeIdx)}</Text>
                   </View>
-                  <Text style={styles.orderCardSub}>
-                    <Text style={{ color: pricePos ? colors.contentPositive : colors.contentNegative }}>
-                      {pricePos ? '+' : ''}{L.pct.toFixed(2)}%
+                  <View style={styles.orderCardSubRow}>
+                    <Text style={styles.orderCardSub}>
+                      <Text style={[styles.orderCardSubPct, { color: pricePos ? colors.contentPositive : colors.contentNegative }]}>
+                        {pricePos ? '+' : ''}{L.pct.toFixed(2)}%
+                      </Text>
+                      <Text style={styles.orderCardSubSuffix}> since posted</Text>
                     </Text>
-                    <Text style={styles.orderCardSubSuffix}> since posted · {activeCall.ago}</Text>
-                  </Text>
+                    <Text style={[styles.orderCardSub, styles.orderCardSubSuffix]}>•</Text>
+                    <Text style={[styles.orderCardSub, styles.orderCardSubSuffix]}>{activeCall.ago}</Text>
+                  </View>
                 </View>
                 <View style={styles.orderCardRight}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                  <View style={styles.orderCardUpsideRow}>
                     <HugeiconsIcon icon={ArrowUpDoubleIcon} size={12} color={colors.contentAccentSecondary} strokeWidth={1.5} />
                     <Text style={styles.orderCardUpside}>{activeCall.upside}</Text>
                   </View>
-                  <Text style={styles.orderCardPotential}>potential left</Text>
+                  <Text style={styles.orderCardPotential}>
+                    {productTypeFor(activeIdx) === 'Intraday' ? '1D' : '5D'} potential
+                  </Text>
                 </View>
               </View>
               <View style={styles.orderCardPriceBar}>
@@ -1160,7 +1250,7 @@ export default function PrimeListingPageV5({
             </View>
             <View style={styles.panelFooter}>
               <View style={styles.footerBalanceRow}>
-                <View style={styles.footerBalanceGroup}>
+                <View style={[styles.footerBalanceGroup, showQtyTip && { opacity: 0 }]}>
                   <Text style={styles.footerLabel}>Balance:</Text>
                   <Text style={styles.footerLinkText}>₹45,000.75</Text>
                 </View>
@@ -1206,20 +1296,37 @@ export default function PrimeListingPageV5({
               )}
 
               <View style={styles.ctaRow}>
-                <TouchableOpacity
-                  style={[styles.qtyContainer, numpadOpen && focusedField === 'qty' && styles.qtyContainerActive]}
-                  activeOpacity={0.8}
-                  onPress={() => numpadOpen ? switchField('qty') : openFocusMode('qty')}
-                >
-                  {numpadOpen && focusedField === 'qty' && !numpadValue ? (
-                    <Text style={styles.qtyPlaceholder}>Qty</Text>
-                  ) : (
-                    <Text style={styles.qtyValue}>
-                      {numpadOpen && focusedField === 'qty' ? numpadValue : qtys[activeIdx]}
-                    </Text>
+                <View style={styles.qtyCol}>
+                  {showQtyTip && (
+                    <View style={styles.qtyTipWrap}>
+                      <View style={styles.qtyTip}>
+                        {QTY_PRESETS.map((q, qi) => (
+                          <React.Fragment key={q}>
+                            {qi > 0 && <Text style={styles.qtyTipSep}>|</Text>}
+                            <TouchableOpacity activeOpacity={0.7} onPress={() => pickQty(q)}>
+                              <Text style={styles.qtyTipText}>{q.toLocaleString('en-IN')}</Text>
+                            </TouchableOpacity>
+                          </React.Fragment>
+                        ))}
+                      </View>
+                      <View style={styles.qtyTipArrow}>
+                        <SvgXml xml={QTY_TIP_ARROW_SVG} width={6} height={4.52817} />
+                      </View>
+                    </View>
                   )}
-                  {numpadOpen && focusedField === 'qty' && <View style={styles.qtyValueCursor} />}
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.qtyContainer, qtyFocused && styles.qtyContainerActive]}
+                    activeOpacity={0.8}
+                    onPress={() => numpadOpen ? switchField('qty') : openFocusMode('qty')}
+                  >
+                    {qtyText === '' ? (
+                      <Text style={styles.qtyPlaceholder}>Qty</Text>
+                    ) : (
+                      <Text style={styles.qtyValue}>{qtyText}</Text>
+                    )}
+                    {qtyFocused && <View style={styles.qtyValueCursor} />}
+                  </TouchableOpacity>
+                </View>
                 <TouchableOpacity style={styles.buyBtn} activeOpacity={0.85} onPress={() => handleBuy(activeIdx)}>
                   <Text style={styles.buyText}>Buy</Text>
                 </TouchableOpacity>
@@ -1255,10 +1362,11 @@ export default function PrimeListingPageV5({
                 ))}
               </View>
             )}
+          </View>
         </Animated.View>
       </Animated.View>
       {exitToast && <SellToast name={exitToast.name} qty={exitToast.qty} />}
-    </SafeArea>
+    </Wrapper>
   );
 }
 
@@ -1422,6 +1530,18 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderPrimary,
     elevation: 8,
   },
+  panelFloating: {
+    left: 8,
+    right: 8,
+    bottom: 8,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.borderPrimary,
+    overflow: 'hidden',
+  },
 
   panelTopBar: {
     paddingTop: 8,
@@ -1450,50 +1570,76 @@ const styles = StyleSheet.create({
   },
 
   // ── Zone 1: pill strip ──
+  pillStripWrap: {
+    flexGrow: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderPrimaryOnSurfaceZ1,
+  },
   pillStrip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 8,
-    gap: 12,
+    paddingBottom: 16,
+    gap: 16,
     flexDirection: 'row',
+    alignItems: 'center',
   },
   pill: {
-    width: 64,
+    width: 56,
     alignItems: 'center',
-    paddingVertical: 4,
-    borderRadius: 8,
+    justifyContent: 'center',
+    gap: 8,
+  },
+  pillLogoFrame: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'transparent',
+  },
+  pillLogoFrameActive: {
+    borderColor: colors.contentPrimary,
   },
   pillTextGroup: {
     gap: 2,
     alignItems: 'center',
     width: '100%',
-    marginTop: 8,
-  },
-  pillActive: {
-    backgroundColor: '#f7f7f7',
-    borderColor: '#353839',
   },
   pillTicker: {
     fontFamily: F.medium,
     fontSize: 10,
     lineHeight: 12,
-    color: colors.contentPrimary,
+    color: colors.contentSecondary,
     textAlign: 'center',
+    width: '100%',
   },
   pillTickerActive: {
     color: colors.contentPrimary,
   },
+  pillUpsideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
   pillUpside: {
     fontFamily: F.medium,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 18,
     color: colors.contentAccentSecondary,
     textAlign: 'center',
   },
-  pillUpsideActive: {
-    color: colors.contentAccentSecondary,
+  pillTag: {
+    backgroundColor: colors.backgroundTertiary,
+    borderRadius: 2,
+    paddingHorizontal: 2,
+  },
+  pillTagText: {
+    fontFamily: F.medium,
+    fontSize: 10,
+    lineHeight: 12,
+    color: colors.contentSecondary,
   },
 
   // ── Zone 2: order card ──
@@ -1505,6 +1651,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: 10,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 8,
@@ -1513,6 +1660,22 @@ const styles = StyleSheet.create({
   orderCardNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    height: 24,
+    gap: 4,
+  },
+  orderCardSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  orderCardSubPct: {
+    fontFamily: F.medium,
+  },
+  orderCardUpsideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 2,
   },
   orderCardName: {
     fontFamily: F.medium,
@@ -1539,11 +1702,9 @@ const styles = StyleSheet.create({
   orderCardRight: {
     alignItems: 'flex-end',
     gap: 2,
-    marginLeft: 12,
   },
   orderCardUpside: {
-    fontFamily: F.sohne,
-    fontWeight: '400',
+    fontFamily: F.medium,
     fontSize: 16,
     lineHeight: 24,
     color: colors.contentAccentSecondary,
@@ -1615,6 +1776,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  qtyCol: { flex: 1 },
+  qtyTipWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: '100%',
+    marginBottom: 2,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  qtyTip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: QTY_TIP_BG,
+  },
+  qtyTipText: {
+    fontFamily: F.medium,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#F2F5F7',
+  },
+  qtyTipSep: {
+    fontFamily: F.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#252A2C',
+  },
+  qtyTipArrow: {
+    height: 5,
+    width: 6,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    transform: [{ scaleY: -1 }],
+  },
 
   slTgtRow: {
     flexDirection: 'row',
@@ -1662,7 +1861,6 @@ const styles = StyleSheet.create({
   },
 
   qtyContainer: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

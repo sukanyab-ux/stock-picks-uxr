@@ -30,6 +30,7 @@ import SafeArea from './SafeArea';
 // ─── Live price jitter ───────────────────────────────────────────────────────
 import { useLiveTick, getLiveTick, live, priceNum, pctNum, inr } from './live';
 import { CALLS } from './PrimeListingPageV2';
+import PrimeListingPageV5 from './PrimeListingPageV5';
 
 // ─── Mint DS stock logo CDN ───────────────────────────────────────────────────
 // Public Groww asset CDN — used as a fallback for tickers we haven't yet
@@ -1902,6 +1903,8 @@ function ProductsAndToolsSection() {
   );
 }
 
+const BOTTOM_NAV_H = 57; // 56 bar + 1 top border
+
 function BottomNav({ activeNav, onNavPress }: { activeNav: number; onNavPress: (i: number) => void }) {
   return (
     <View style={styles.bottomNav}>
@@ -1928,7 +1931,7 @@ function BottomNav({ activeNav, onNavPress }: { activeNav: number; onNavPress: (
 let exploreScrollY = 0;
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
-export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNavigateToPrime, onNavigateToPrimeListing, onNavigateToPrimeStock, onNavigateToPrimeExploreCard, onBuy, primeActivated, positions, initialTab, onInitialTabConsumed, onNativePositionPress }: { onNavigateToStocks: (stock: StockConfig) => void; onNavigateToProfile?: () => void; onNavigateToPrime?: () => void; onNavigateToPrimeListing?: () => void; onNavigateToPrimeStock?: (ticker: string) => void; onNavigateToPrimeExploreCard?: (ticker: string) => void; onBuy?: (o: { name: string; buy: string; stoploss: string; target?: string; market?: string }) => void; primeActivated?: boolean; positions?: Position[]; initialTab?: number | null; onInitialTabConsumed?: () => void; onNativePositionPress?: (p: Position) => void }) {
+export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNavigateToPrime, onNavigateToPrimeListing, onNavigateToPrimeStock, onNavigateToPrimeExploreCard, onBuy, primeActivated, positions, initialTab, onInitialTabConsumed, onNativePositionPress, picksVariant }: { picksVariant?: 'v2' | 'v5'; onNavigateToStocks: (stock: StockConfig) => void; onNavigateToProfile?: () => void; onNavigateToPrime?: () => void; onNavigateToPrimeListing?: () => void; onNavigateToPrimeStock?: (ticker: string) => void; onNavigateToPrimeExploreCard?: (ticker: string) => void; onBuy?: (o: { name: string; buy: string; stoploss: string; target?: string; market?: string }) => void; primeActivated?: boolean; positions?: Position[]; initialTab?: number | null; onInitialTabConsumed?: () => void; onNativePositionPress?: (p: Position) => void }) {
   const { mode } = useTheme();
   styles = makeStyles();
   useLiveTick(); // re-render the whole screen every 2s so prices jitter
@@ -1992,6 +1995,28 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNa
     const id = setInterval(fetchAll, 10_000);
     return () => clearInterval(id);
   }, []);
+
+  const showV5Positions = picksVariant === 'v5' && activeNav !== 2 && activeTab === 2;
+  const [v5PanelExpanded, setV5PanelExpanded] = useState(true);
+  // 0 = nav hidden (picks card expanded), 1 = nav shown (card docked).
+  const navReveal = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (showV5Positions) {
+      setV5PanelExpanded(true);
+      navReveal.setValue(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showV5Positions]);
+  useEffect(() => {
+    Animated.spring(navReveal, {
+      toValue: v5PanelExpanded ? 0 : 1,
+      damping: 32,
+      stiffness: 260,
+      mass: 1,
+      useNativeDriver: false,
+    }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v5PanelExpanded]);
 
   // ── helpers ──────────────────────────────────────────────────────────────
   const fmtPrice = (sym: string, fallback: string) => {
@@ -2103,7 +2128,11 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNa
         </View>
       </View>
 
-      {/* Scrollable content */}
+      {showV5Positions ? (
+        <View style={{ flex: 1, overflow: 'hidden' }}>
+          <PrimeListingPageV5 embedded onBuy={onBuy} onPanelExpandedChange={setV5PanelExpanded} />
+        </View>
+      ) : (
       <ScrollView
         ref={exploreScrollRef}
         style={styles.scrollView}
@@ -2181,8 +2210,20 @@ export default function HomePage({ onNavigateToStocks, onNavigateToProfile, onNa
           </>
         )}
       </ScrollView>
+      )}
 
-      <BottomNav activeNav={activeNav} onNavPress={setActiveNav} />
+      {showV5Positions ? (
+        <Animated.View
+          style={{
+            height: navReveal.interpolate({ inputRange: [0, 1], outputRange: [0, BOTTOM_NAV_H] }),
+            overflow: 'hidden',
+          }}
+        >
+          <BottomNav activeNav={activeNav} onNavPress={setActiveNav} />
+        </Animated.View>
+      ) : (
+        <BottomNav activeNav={activeNav} onNavPress={setActiveNav} />
+      )}
       {stripExitToast && <SellToast name={stripExitToast.name} qty={stripExitToast.qty} />}
 
     </SafeArea>
